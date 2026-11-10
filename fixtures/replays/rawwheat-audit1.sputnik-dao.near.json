@@ -1,0 +1,317 @@
+{
+  "dao": "rawwheat-audit1.sputnik-dao.near",
+  "network": "mainnet",
+  "readAtBlock": 223937593,
+  "policy": {
+    "id": "trezu-style-default",
+    "type": "proposal_policy",
+    "explain": "Treasury calls only to known tokens, at most 20 actions, at most 0.1 NEAR attached",
+    "response": "reject",
+    "status": "approved",
+    "origin": {
+      "kind": "human",
+      "author": "scripts/firewall-replay.ts"
+    },
+    "allowed_call_contracts": [
+      "wrap.near",
+      "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "usdt.tether-token.near"
+    ],
+    "max_actions_per_call": 20,
+    "max_call_deposit_yocto": "100000000000000000000000"
+  },
+  "proposals": 30,
+  "flagged": 16,
+  "flaggedApproved": 9,
+  "approvalWindowBlocks": {
+    "min": 5,
+    "max": 9
+  },
+  "rows": [
+    {
+      "id": 0,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of wrap.near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 1,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of wrap.near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 2,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 3,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 4,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 5,
+      "status": "Failed",
+      "summary": "Transfer 1 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": 9
+    },
+    {
+      "id": 6,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of wrap.near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 7,
+      "status": "Failed",
+      "summary": "Transfer 1 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": 8
+    },
+    {
+      "id": 8,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of wrap.near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 9,
+      "status": "Failed",
+      "summary": "Transfer 1 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": 9
+    },
+    {
+      "id": 10,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of wrap.near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 11,
+      "status": "Failed",
+      "summary": "Transfer 1 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": 8
+    },
+    {
+      "id": 12,
+      "status": "InProgress",
+      "summary": "Transfer 1 (raw units of wrap.near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 13,
+      "status": "InProgress",
+      "summary": "Call capture.rawwheat7006.near: 200x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "200 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 14,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 3x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list"
+      ],
+      "blocksSubmissionToLastVote": 5
+    },
+    {
+      "id": 15,
+      "status": "InProgress",
+      "summary": "Call capture.rawwheat7006.near: 200x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "200 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 16,
+      "status": "InProgress",
+      "summary": "Call capture.rawwheat7006.near: 200x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "200 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 17,
+      "status": "InProgress",
+      "summary": "Call capture.rawwheat7006.near: 200x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "200 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 18,
+      "status": "Failed",
+      "summary": "Transfer 1534105426252067299999997 (raw units of near) to rawwheat7006.near",
+      "flagged": false,
+      "violations": [],
+      "blocksSubmissionToLastVote": 5
+    },
+    {
+      "id": 19,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 1x storage_deposit; 1.53161 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "attaches 1.53161 NEAR in total (max 0.10000 NEAR)"
+      ],
+      "blocksSubmissionToLastVote": 5
+    },
+    {
+      "id": 20,
+      "status": "InProgress",
+      "summary": "Call capture.rawwheat7006.near: 200x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "200 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 21,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 50x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "50 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": 7
+    },
+    {
+      "id": 22,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 50x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "50 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": 8
+    },
+    {
+      "id": 23,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 50x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "50 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": 8
+    },
+    {
+      "id": 24,
+      "status": "InProgress",
+      "summary": "Call capture.rawwheat7006.near: 200x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "200 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 25,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 5x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list"
+      ],
+      "blocksSubmissionToLastVote": 9
+    },
+    {
+      "id": 26,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 2x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list"
+      ],
+      "blocksSubmissionToLastVote": 8
+    },
+    {
+      "id": 27,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 100x ft_transfer; 0.00000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "100 actions in one proposal (max 20)"
+      ],
+      "blocksSubmissionToLastVote": 7
+    },
+    {
+      "id": 28,
+      "status": "InProgress",
+      "summary": "Call capture.rawwheat7006.near: 1x storage_deposit; 2.45000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "attaches 2.45000 NEAR in total (max 0.10000 NEAR)"
+      ],
+      "blocksSubmissionToLastVote": null
+    },
+    {
+      "id": 29,
+      "status": "Approved",
+      "summary": "Call capture.rawwheat7006.near: 1x storage_deposit; 0.95000 NEAR attached in total",
+      "flagged": true,
+      "violations": [
+        "calls capture.rawwheat7006.near, which is not on the allowed contracts list",
+        "attaches 0.95000 NEAR in total (max 0.10000 NEAR)"
+      ],
+      "blocksSubmissionToLastVote": 5
+    }
+  ]
+}

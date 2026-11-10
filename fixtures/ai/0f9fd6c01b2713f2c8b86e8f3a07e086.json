@@ -1,0 +1,61 @@
+{
+  "replayKey": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "job": "explain-proposal",
+    "ruleId": "treasury-policy",
+    "proposalId": 1,
+    "summary": "ChangePolicyAddOrUpdateRole (governance)"
+  },
+  "request": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You explain Sputnik DAO proposals to the DAO's council members, who otherwise see raw base64 function-call arguments. The Qorvex firewall has already acted (or only alerted); you do not decide anything. Plain text, at most 7 short lines: what the proposal would do if executed (decode the calls), who benefits, why it breaks the DAO's policy, and what the council should check. Describe Qorvex's action exactly as given in qorvex_action; never say a proposal was blocked or rejected unless qorvex_action says so. Do not speculate beyond the data."
+      },
+      {
+        "role": "user",
+        "content": "{\"dao_policy_rule\":{\"id\":\"treasury-policy\",\"type\":\"proposal_policy\",\"max_transfer\":{\"near\":\"800016687313502759999999\",\"usdc.test.near\":\"50000000000\"},\"allowed_call_contracts\":[\"vault.test.near\"],\"max_actions_per_call\":20,\"max_call_deposit_yocto\":\"800016687313502759999999\",\"alert_on_governance\":true,\"explain\":\"Treasury proposals are limited to 8 NEAR or 50,000 USDC per transfer, and function calls are restricted to vault.test.near with a maximum of 20 actions.\",\"status\":\"approved\",\"response\":\"reject\",\"origin\":{\"kind\":\"ai\",\"model\":\"Qwen/Qwen3.8-27B\",\"draftId\":\"drf_4fd54ccaf932\"},\"approvedBy\":\"demo operator\",\"approvedAt\":\"2026-11-10T16:20:44.817Z\"},\"proposal\":{\"id\":1,\"proposer\":\"owner.test.near\",\"kind\":\"ChangePolicyAddOrUpdateRole\",\"decoded\":{\"ChangePolicyAddOrUpdateRole\":{\"role\":{\"name\":\"qorvex-firewall\",\"kind\":{\"Group\":[\"firewall.test.near\"]},\"permissions\":[\"transfer:VoteReject\",\"call:VoteReject\"],\"vote_policy\":{\"transfer\":{\"weight_kind\":\"RoleWeight\",\"quorum\":\"0\",\"threshold\":\"1\"},\"call\":{\"weight_kind\":\"RoleWeight\",\"quorum\":\"0\",\"threshold\":\"1\"}}}}}},\"deterministic_summary\":\"ChangePolicyAddOrUpdateRole (governance)\",\"violations\":[\"governance change (ChangePolicyAddOrUpdateRole) — alert only\"],\"qorvex_action\":\"Qorvex did NOT vote: this is an alert only. The proposal is still open and can be approved by the council.\"}"
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 500,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "response": {
+    "id": "8c0030e836604e4a8a3d868a085444db",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "This proposal adds the \"qorvex-firewall\" group with reject permissions for transfers and calls.\nIt benefits the firewall group by granting them veto power over treasury actions.\nIt breaks policy because it is a governance change, which is restricted to alert-only status.\nQorvex did not vote; this is an alert only, and the proposal remains open.\nThe council should check if granting these specific reject permissions aligns with current security needs.\nVerify that the \"qorvex-firewall\" group members are correctly configured in the firewall.test.near contract.\nEnsure no other unauthorized role changes are being bundled with this update."
+        },
+        "finish_reason": "stop",
+        "logprobs": null,
+        "matched_stop": 248046
+      }
+    ],
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "created": 1794327647,
+    "usage": {
+      "prompt_tokens": 556,
+      "total_tokens": 690,
+      "completion_tokens": 134,
+      "prompt_tokens_details": {
+        "cached_tokens": 64
+      },
+      "reasoning_tokens": 0,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "text": "This proposal adds the \"qorvex-firewall\" group with reject permissions for transfers and calls.\nIt benefits the firewall group by granting them veto power over treasury actions.\nIt breaks policy because it is a governance change, which is restricted to alert-only status.\nQorvex did not vote; this is an alert only, and the proposal remains open.\nThe council should check if granting these specific reject permissions aligns with current security needs.\nVerify that the \"qorvex-firewall\" group members are correctly configured in the firewall.test.near contract.\nEnsure no other unauthorized role changes are being bundled with this update.",
+  "chatId": "8c0030e836604e4a8a3d868a085444db",
+  "recordedAt": "2026-11-10T16:20:47.459Z",
+  "modelUsed": "Qwen/Qwen3.6-35B-A3B-FP8"
+}

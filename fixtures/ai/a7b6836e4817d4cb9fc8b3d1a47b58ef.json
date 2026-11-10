@@ -1,0 +1,61 @@
+{
+  "replayKey": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "job": "explain-proposal",
+    "ruleId": "treasury-policy",
+    "proposalId": 2,
+    "summary": "Transfer 200000000000 (raw units of usdc.test.near) to mallory.test.near"
+  },
+  "request": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You explain Sputnik DAO proposals to the DAO's council members, who otherwise see raw base64 function-call arguments. The Qorvex firewall has already acted (or only alerted); you do not decide anything. Plain text, at most 7 short lines: what the proposal would do if executed (decode the calls), who benefits, why it breaks the DAO's policy, and what the council should check. Describe Qorvex's action exactly as given in qorvex_action; never say a proposal was blocked or rejected unless qorvex_action says so. Do not speculate beyond the data."
+      },
+      {
+        "role": "user",
+        "content": "{\"dao_policy_rule\":{\"id\":\"treasury-policy\",\"type\":\"proposal_policy\",\"max_transfer\":{\"near\":\"800016687313502759999999\",\"usdc.test.near\":\"50000000000\"},\"allowed_call_contracts\":[\"vault.test.near\"],\"max_actions_per_call\":20,\"max_call_deposit_yocto\":\"800016687313502759999999\",\"alert_on_governance\":true,\"explain\":\"Treasury proposals are limited to 8 NEAR or 50,000 USDC per transfer, and function calls are restricted to vault.test.near with a maximum of 20 actions.\",\"status\":\"approved\",\"response\":\"reject\",\"origin\":{\"kind\":\"ai\",\"model\":\"Qwen/Qwen3.8-27B\",\"draftId\":\"drf_4fd54ccaf932\"},\"approvedBy\":\"demo operator\",\"approvedAt\":\"2026-11-10T16:20:44.817Z\"},\"proposal\":{\"id\":2,\"proposer\":\"mallory.test.near\",\"kind\":\"Transfer\",\"decoded\":{\"Transfer\":{\"token_id\":\"usdc.test.near\",\"receiver_id\":\"mallory.test.near\",\"amount\":\"200000000000\",\"msg\":null}}},\"deterministic_summary\":\"Transfer 200000000000 (raw units of usdc.test.near) to mallory.test.near\",\"violations\":[\"transfer of 200000000000 usdc.test.near exceeds the per-proposal cap 50000000000\"],\"qorvex_action\":\"Qorvex voted VoteReject; the proposal is now Rejected.\"}"
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 500,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "response": {
+    "id": "98fc36762b194e68b24d0d8d40a31f73",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "This proposal transfers 200,000 USDC to the proposer, mallory.test.near.\nIt exceeds the treasury policy cap of 50,000 USDC per transfer.\nThe Qorvex firewall voted VoteReject, so the proposal is Rejected.\nNo funds were moved, but the attempt to self-deal is evident.\nThe council should verify if this is a test or a genuine policy violation attempt.\nCheck the proposer's history for similar large transfer attempts.\nEnsure the policy cap is correctly enforced for all future USDC transfers."
+        },
+        "finish_reason": "stop",
+        "logprobs": null,
+        "matched_stop": 248046
+      }
+    ],
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "created": 1794327659,
+    "usage": {
+      "prompt_tokens": 546,
+      "total_tokens": 668,
+      "completion_tokens": 122,
+      "prompt_tokens_details": {
+        "cached_tokens": 128
+      },
+      "reasoning_tokens": 0,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "text": "This proposal transfers 200,000 USDC to the proposer, mallory.test.near.\nIt exceeds the treasury policy cap of 50,000 USDC per transfer.\nThe Qorvex firewall voted VoteReject, so the proposal is Rejected.\nNo funds were moved, but the attempt to self-deal is evident.\nThe council should verify if this is a test or a genuine policy violation attempt.\nCheck the proposer's history for similar large transfer attempts.\nEnsure the policy cap is correctly enforced for all future USDC transfers.",
+  "chatId": "98fc36762b194e68b24d0d8d40a31f73",
+  "recordedAt": "2026-11-10T16:21:00.059Z",
+  "modelUsed": "Qwen/Qwen3.6-35B-A3B-FP8"
+}

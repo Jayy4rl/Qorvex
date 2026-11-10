@@ -1,0 +1,25 @@
+# Secrets: keys live in .env only, never in the repo
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+**/credentials/
+.near-credentials/
+
+# Submission payload contains personal data (HACKATHON.md §3)
+submission*.json
+
+# Runtime data (stores, sandbox/testnet keys, caches)
+data/
+
+# Build / deps
+node_modules/
+contracts/target/
+dist/
+.next/
+# Built contracts in contracts/wasm/ ARE committed so the demo runs without Rust.
+*.wasm
+!contracts/wasm/*.wasm
+# Sputnik DAO v2.3.1 code fetched from mainnet (hash-checked), used by the demo and e2e tests.
+!contracts/vendor/*.wasm

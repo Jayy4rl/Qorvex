@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Qorvex console</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Qorvex console</h1>
+    <span class="meta" id="health"></span>
+    <span style="flex:1"></span>
+    <button id="logout" class="hidden">Forget token</button>
+  </header>
+  <main>
+    <div id="login" class="panel hidden">
+      <h2>Operator token</h2>
+      <p class="small muted">Enter the value of QORVEX_ADMIN_TOKEN (printed by <code>npm run demo</code>). It is kept in this browser's localStorage only.</p>
+      <div class="row"><input id="token" type="password" size="40" placeholder="operator token"><button class="primary" id="saveToken">Continue</button></div>
+    </div>
+    <div id="app" class="grid hidden">
+      <aside>
+        <div class="panel">
+          <h2>Protocols</h2>
+          <ul class="list" id="protocols"></ul>
+        </div>
+        <div class="panel">
+          <h2>Connect a contract</h2>
+          <div class="row"><select id="cNetwork"></select></div>
+          <div class="row"><input id="cContract" placeholder="contract account id" style="width:100%"></div>
+          <div class="row"><input id="cName" placeholder="display name (optional)" style="width:100%"></div>
+          <div class="row"><button class="primary" id="connect">Connect</button></div>
+        </div>
+        <div class="panel">
+          <h2>Relayers</h2>
+          <ul class="list" id="relayers"></ul>
+          <div class="row"><input id="rName" placeholder="relayer name"><button id="addRelayer">Add</button></div>
+        </div>
+        <div class="panel hidden" id="demoPanel">
+          <h2>Local demo</h2>
+          <p class="small muted">Replays real incidents against the sandbox contracts.</p>
+          <div class="row"><button id="ghostLedger">Ghost-balance bug → ledger</button></div>
+          <div class="row"><button id="ghostVault">Ghost-balance bug → vault (guard)</button></div>
+          <div class="row"><button id="trezuOpen">Trezu drain, no Qorvex</button></div>
+          <div class="row"><button id="trezuGuarded">Trezu drain, with check()</button></div>
+          <h3>Treasury DAO</h3>
+          <div class="row"><button id="propBig">Requestor: 200,000 USDC to self</button></div>
+          <div class="row"><button id="propDrain">Requestor: 100 ft_transfers on attacker token</button></div>
+          <div class="row"><button id="propInvoice">Requestor: 1,000 USDC invoice</button></div>
+          <div class="row"><button id="councilApprove">Council approves the last proposal</button></div>
+          <div class="row"><button id="daoUnpause">DAO votes to unpause the vault</button></div>
+          <h3>Relayed approval (attacker's own DAO)</h3>
+          <div class="row"><button id="relayOpen">Relay vote, no Qorvex</button></div>
+          <div class="row"><button id="relayGuarded">Relay vote, with checkProposal()</button></div>
+          <pre id="demoOut" class="hidden"></pre>
+        </div>
+      </aside>
+      <section id="detail"><div class="panel muted">Select or connect a protocol.</div></section>
+    </div>
+  </main>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/console.js" type="module"></script>
+</body>
+</html>
