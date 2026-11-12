@@ -1,0 +1,31 @@
+{
+  "name": "@qorvex/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Qorvex service: HTTP API, watcher, proposal firewall, AI rule drafting, relayer SDK and the local demo.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/server/main.ts",
+    "demo": "tsx scripts/demo.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e",
+    "seed:intents": "tsx scripts/seed-intents.ts",
+    "deploy:testnet": "tsx scripts/deploy-testnet.ts",
+    "firewall:replay": "tsx scripts/firewall-replay.ts"
+  },
+  "dependencies": {
+    "near-kit": "0.20.2"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

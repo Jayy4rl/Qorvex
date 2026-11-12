@@ -1,0 +1,452 @@
+/* Qorvex design system: tokens, base elements and shared components.
+   Dark-only by design: near-black olive surfaces, one lime accent, serif display type. */
+
+:root {
+  /* Surfaces */
+  --bg: #090a08;
+  --bg-raised: #0f110c;
+  --surface: #13150f;
+  --surface-2: #1a1d14;
+  --surface-glass: linear-gradient(180deg, rgba(36, 40, 26, 0.72), rgba(20, 22, 15, 0.72));
+  --border: rgba(243, 241, 233, 0.08);
+  --border-strong: rgba(243, 241, 233, 0.15);
+
+  /* Text */
+  --text: #f3f1e9;
+  --text-2: #bdbcb1;
+  --text-3: #8c8b80;
+
+  /* Accent and secondary */
+  --lime: #c5f52d;
+  --lime-hover: #d4ff47;
+  --lime-ink: #10140a;
+  --lime-soft: rgba(197, 245, 45, 0.12);
+  --lime-line: rgba(197, 245, 45, 0.35);
+  --olive: #6f7d34;
+  --olive-deep: #2a3015;
+
+  /* Status */
+  --ok: #a6e34a;
+  --warn: #e9b949;
+  --bad: #f06a5d;
+
+  /* Type */
+  --font-serif: "Instrument Serif", "Iowan Old Style", "Times New Roman", serif;
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Shape and rhythm */
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --gutter: clamp(16px, 4vw, 40px);
+  --max: 1200px;
+  --header-h: 68px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: calc(var(--header-h) + 16px);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration-color: var(--lime-line);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-color: var(--lime);
+}
+
+:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--lime);
+  color: var(--lime-ink);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 400;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--lime);
+  color: var(--lime-ink);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.2s var(--ease);
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+/* ----------------------------------------------------------------- layout */
+
+.container {
+  width: 100%;
+  max-width: calc(var(--max) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+/* ------------------------------------------------------------- typography */
+
+.serif {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.serif em,
+em.accent {
+  font-style: italic;
+  color: var(--lime);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 10px var(--lime);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.faint {
+  color: var(--text-3);
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: 500 15px/1 var(--font-sans);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.2s var(--ease),
+    border-color 0.2s var(--ease),
+    color 0.2s var(--ease),
+    box-shadow 0.25s var(--ease),
+    transform 0.2s var(--ease);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: var(--lime);
+  color: var(--lime-ink);
+  box-shadow: 0 0 0 0 rgba(197, 245, 45, 0);
+}
+
+.btn-primary:hover {
+  background: var(--lime-hover);
+  box-shadow: 0 8px 28px -8px rgba(197, 245, 45, 0.55);
+}
+
+.btn-secondary {
+  background: rgba(243, 241, 233, 0.03);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  border-color: rgba(243, 241, 233, 0.32);
+  background: rgba(243, 241, 233, 0.06);
+}
+
+.btn-lg {
+  min-height: 52px;
+  padding: 0 28px;
+  font-size: 16px;
+}
+
+.btn-sm {
+  min-height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.arrow {
+  transition: transform 0.2s var(--ease);
+}
+
+a:hover > .arrow,
+.btn:hover > .arrow {
+  transform: translateX(3px);
+}
+
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--lime);
+  font-weight: 500;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------- cards */
+
+.card {
+  position: relative;
+  background: var(--surface-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 0 rgba(243, 241, 233, 0.04),
+    0 24px 60px -30px rgba(0, 0, 0, 0.8);
+}
+
+/* ------------------------------------------------------------ pills / dots */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font: 500 12px/1 var(--font-sans);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.pill-lime {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--lime-ink);
+}
+
+.pill-outline-lime {
+  border-color: var(--lime-line);
+  color: var(--lime);
+}
+
+.pill-warn {
+  border-color: rgba(233, 185, 73, 0.4);
+  color: var(--warn);
+}
+
+.pill-bad {
+  border-color: rgba(240, 106, 93, 0.45);
+  color: var(--bad);
+}
+
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex: none;
+}
+
+.dot-lime {
+  background: var(--lime);
+  box-shadow: 0 0 8px rgba(197, 245, 45, 0.8);
+}
+
+.dot-ok {
+  background: var(--ok);
+}
+
+.dot-warn {
+  background: var(--warn);
+}
+
+.dot-bad {
+  background: var(--bad);
+  box-shadow: 0 0 8px rgba(240, 106, 93, 0.6);
+}
+
+/* -------------------------------------------------------------- code block */
+
+.code {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0c0e0a;
+  overflow: hidden;
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  font: 12px/1 var(--font-mono);
+  color: var(--text-3);
+}
+
+.code pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #dcdad0;
+  tab-size: 2;
+}
+
+.copy-btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font: 12px/1 var(--font-mono);
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+
+.copy-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* -------------------------------------------------------- reveal animation */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.7s var(--ease),
+    transform 0.7s var(--ease);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}

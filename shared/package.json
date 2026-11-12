@@ -1,0 +1,17 @@
+{
+  "name": "@qorvex/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Types shared by the Qorvex backend and frontend: the domain model and the HTTP API's response shapes. Types only, no runtime code.",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@qorvex/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Qorvex web app: public site (landing page, documentation) and operator sign-in. Served by the backend from frontend/dist.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0",
+    "@qorvex/shared": "0.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router": "7.18.4"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.7",
+    "vitest": "5.0.5"
+  }
+}

@@ -387,6 +387,68 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "only the target's council")]
+    fn only_council_can_allow_repeat_pause() {
+        let mut g = setup();
+        ctx("watcher.test", NearToken::from_yoctonear(1), 20);
+        g.allow_repeat_pause(acc("ledger.test"));
+    }
+
+    #[test]
+    #[should_panic(expected = "attach 1 yoctoNEAR")]
+    fn allow_repeat_pause_requires_one_yocto() {
+        // A function-call key (which cannot attach a deposit) must not reach it.
+        let mut g = setup();
+        ctx("council.test", NearToken::from_yoctonear(0), 20);
+        g.allow_repeat_pause(acc("ledger.test"));
+    }
+
+    #[test]
+    #[should_panic(expected = "owner only")]
+    fn non_owner_cannot_set_watchers() {
+        let mut g = setup();
+        ctx("watcher.test", NearToken::from_yoctonear(1), 2);
+        g.set_watchers(vec![acc("mallory.test")], vec![]);
+    }
+
+    #[test]
+    fn re_registration_keeps_the_cooldown() {
+        // A target re-registering (e.g. to change council) must not reset its last pause time.
+        let mut g = setup();
+        let mut t = g.get_target(acc("ledger.test")).unwrap();
+        t.last_pause_ns = U64(10 * 1_000_000_000);
+        t.repeat_allowed = true;
+        g.targets.insert(acc("ledger.test"), t);
+        ctx("ledger.test", REGISTRATION_DEPOSIT, 20);
+        g.register_target(acc("new-council.test"));
+        let t = g.get_target(acc("ledger.test")).unwrap();
+        assert_eq!(t.last_pause_ns, U64(10 * 1_000_000_000));
+        assert!(!t.repeat_allowed);
+        assert_eq!(t.council, acc("new-council.test"));
+    }
+
+    #[test]
+    #[should_panic(expected = "bad rule_id")]
+    fn pause_rejects_oversized_rule_id() {
+        let mut g = setup();
+        ctx("watcher.test", NearToken::from_yoctonear(0), 10);
+        let _ = g.pause(acc("ledger.test"), "r".repeat(MAX_RULE_ID_LEN + 1), "e".into());
+    }
+
+    #[test]
+    fn pause_history_pages_are_capped() {
+        let mut g = setup();
+        for i in 0..3u64 {
+            // Each pause is outside the previous one's cooldown window (no successful pause is recorded in unit tests).
+            ctx("watcher.test", NearToken::from_yoctonear(0), 10 + i);
+            let _ = g.pause(acc("ledger.test"), format!("r{i}"), "e".into());
+        }
+        assert_eq!(g.pause_history(acc("ledger.test"), Some(1), Some(1))[0].rule_id, "r1");
+        assert_eq!(g.pause_history(acc("ledger.test"), Some(5), None).len(), 0);
+        assert_eq!(g.pause_history(acc("other.test"), None, None).len(), 0);
+    }
+
+    #[test]
     #[should_panic(expected = "attach 0.01 NEAR")]
     fn registration_needs_storage_deposit() {
         let mut g = setup();
