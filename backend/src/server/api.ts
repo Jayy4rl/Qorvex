@@ -584,7 +584,7 @@ export function createServer(d: ApiDeps): http.Server {
   ];
 
 
-  routes.push(...saasRoutes({ d, net, getProtocol, getRelayer, audit, stepUp, runBacktest }));
+  routes.push(...saasRoutes({ d, net, getProtocol, getRelayer, audit, stepUp, runBacktest, principalOf: (req) => resolvePrincipal(principalDeps, req) }));
   const authHandler = d.auth ? toNodeHandler(d.auth.auth) : undefined;
   const origins = new Set(d.auth?.trustedOrigins ?? []);
   /** Browsers send Origin on every cross-origin and same-origin POST; refuse ones that are not ours. */
@@ -593,6 +593,11 @@ export function createServer(d: ApiDeps): http.Server {
     if (typeof o === "string") return origins.has(o);
     return req.headers["sec-fetch-site"] !== "cross-site";
   };
+  const refuseCrossSite = (req: http.IncomingMessage) =>
+    new HttpError(
+      403,
+      `cross-site request refused: this page is on ${typeof req.headers.origin === "string" ? req.headers.origin : "another site"}, but this server's public address is ${d.auth?.origin ?? "unset"}. Open the app at that address (or set PUBLIC_URL / QORVEX_TRUSTED_ORIGINS).`,
+    );
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
@@ -600,7 +605,7 @@ export function createServer(d: ApiDeps): http.Server {
       if (url.pathname.startsWith("/api/auth/")) {
         if (!authHandler) throw new HttpError(404, "sign-in is not configured on this server");
         // Better Auth skips its own origin check on requests without a cookie (sign-in, sign-up).
-        if (req.method !== "GET" && !originOk(req)) throw new HttpError(403, "cross-site request refused");
+        if (req.method !== "GET" && !originOk(req)) throw refuseCrossSite(req);
         return await authHandler(req, res);
       }
       for (const [method, re, access, h] of routes) {
@@ -610,7 +615,7 @@ export function createServer(d: ApiDeps): http.Server {
         if (access !== "public" && access !== "relayer") {
           const p = await resolvePrincipal(principalDeps, req);
           if (p.kind === "anonymous") throw new HttpError(401, d.singleTenant ? "sign in, or send Authorization: Bearer <QORVEX_ADMIN_TOKEN>" : "sign in required");
-          if (p.kind === "session" && req.method !== "GET" && !originOk(req)) throw new HttpError(403, "cross-site request refused");
+          if (p.kind === "session" && req.method !== "GET" && !originOk(req)) throw refuseCrossSite(req);
           if (access === "user") {
             ctx = { p, ws: p.kind === "session" ? (p.workspaceId ?? "") : p.workspaceId };
           } else {

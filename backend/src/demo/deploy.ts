@@ -95,6 +95,8 @@ interface DeployOptions {
    * and the Trezu sponsor-drain actors; those demos run on the local sandbox.
    */
   minimal?: boolean;
+  /** Called with each service key (watcher pause key, firewall key) as soon as it is generated, before it is added on-chain. */
+  saveKey?: (label: string, accountId: string, secretKey: string) => void;
   log?: (s: string) => void;
 }
 
@@ -162,6 +164,8 @@ export async function deployDemoWorld(near: Near, keyStoreAdd: (a: KeyedAccount)
   // Qorvex ops keep the full-access keys; the service gets only these function-call keys.
   const pauseKey = newKey();
   const firewallKey = newKey();
+  opts.saveKey?.("watcher-pause-key", id("watcher"), pauseKey.secretKey);
+  if (!opts.minimal) opts.saveKey?.("firewall-key", id("firewall"), firewallKey.secretKey);
   log("adding the pause-only and reject-only function-call keys");
   await near
     .transaction(id("watcher"))

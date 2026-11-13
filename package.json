@@ -30,7 +30,8 @@
     "deploy:testnet": "npm run deploy:testnet -w @qorvex/backend --",
     "firewall:replay": "npm run firewall:replay -w @qorvex/backend --",
     "test:web": "npm test -w @qorvex/frontend",
-    "replay:testnet": "npm run replay:testnet -w @qorvex/backend --"
+    "replay:testnet": "npm run replay:testnet -w @qorvex/backend --",
+    "finish:testnet": "npm run finish:testnet -w @qorvex/backend --"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

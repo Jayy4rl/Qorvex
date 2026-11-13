@@ -44,7 +44,7 @@ export async function api<T = any>(path: string, o: { method?: string; body?: un
 }
 
 export interface Me {
-  kind: "user" | "admin";
+  kind: "user" | "admin" | "anonymous";
   singleTenant: boolean;
   user?: { id: string; name: string; email: string | null };
   nearAccounts: { network: string; accountId: string }[];
@@ -56,7 +56,8 @@ export interface Me {
 /** The signed-in principal, or null when signed out. */
 export async function me(): Promise<Me | null> {
   try {
-    return await api<Me>("/api/me");
+    const m = await api<Me>("/api/me");
+    return m.kind === "anonymous" ? null : m;
   } catch (e) {
     if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return null;
     throw e;

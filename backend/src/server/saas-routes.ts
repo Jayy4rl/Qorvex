@@ -24,6 +24,7 @@
 import type http from "node:http";
 import type { AuthorityClaim, ContractCheck, NetworkId, Protocol, Rule, WorkspaceRole } from "@qorvex/shared";
 import type { ApiDeps, Ctx, Route } from "./api.ts";
+import type { Principal } from "./principal.ts";
 import { maybeAlertRefusals, relayerAuth, relayerView, wsOf } from "./api.ts";
 import { HttpError, body, obj, send } from "./http.ts";
 import type { Action } from "../auth/access.ts";
@@ -47,6 +48,7 @@ export interface SaasHelpers {
   audit: (ctx: Ctx, action: string, target?: string, detail?: unknown, signedMessage?: unknown) => void;
   stepUp: (req: http.IncomingMessage, ctx: Ctx, action: Action, target: string, params: unknown, allowAccount?: (network: NetworkId, accountId: string) => boolean) => Promise<unknown>;
   runBacktest: (p: Protocol, rule: Rule) => Promise<unknown>;
+  principalOf: (req: http.IncomingMessage) => Promise<Principal>;
 }
 
 /** Detections are cached this long for the public check (they are cheap but hit public RPCs). */
@@ -130,7 +132,11 @@ export function saasRoutes(h: SaasHelpers): Route[] {
     }],
 
     // ------------------------------------------------------- signed in
-    ["GET", /^\/api\/me$/, "user", async (_q, res, _m, _u, ctx) => {
+    // Public so a signed-out visitor gets 200 {kind: "anonymous"} instead of a console error.
+    ["GET", /^\/api\/me$/, "public", async (req, res) => {
+      const p = await h.principalOf(req);
+      if (p.kind === "anonymous" || p.kind === "apiKey") return send(res, 200, { kind: "anonymous", singleTenant: d.singleTenant });
+      const ctx: Ctx = { p, ws: p.kind === "session" ? (p.workspaceId ?? "") : p.workspaceId };
       if (ctx.p.kind === "admin") return send(res, 200, { kind: "admin", singleTenant: true, workspace: { id: DEFAULT_WORKSPACE, name: "Default (operator token)", role: "owner" }, workspaces: [], nearAccounts: [] });
       if (ctx.p.kind !== "session") throw new HttpError(403, "sign in with a user account");
       const workspaces = t.workspacesOf(ctx.p.userId);

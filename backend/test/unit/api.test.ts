@@ -315,6 +315,19 @@ describe("workspaces", () => {
     }
   });
 
+  it("/api/me answers 200 'anonymous' when signed out (no console error on public pages)", async () => {
+    const r = await call("GET", "/api/me");
+    expect(r.status).toBe(200);
+    expect(r.body.kind).toBe("anonymous");
+    expect((await call("GET", "/api/me", { cookie: alice })).body.kind).toBe("user");
+    expect((await call("GET", "/api/me", { token: ADMIN })).body.kind).toBe("admin");
+  });
+
+  it("explains a cross-site refusal", async () => {
+    const r = await call("POST", "/api/relayers", { cookie: alice, headers: { origin: "https://evil.example" }, body: { name: "x" } });
+    expect(r.body.error).toMatch(/evil\.example.*public address is http:\/\/127\.0\.0\.1/);
+  });
+
   it("anonymous callers get 401 on workspace routes", async () => {
     for (const [m, p] of [["GET", "/api/protocols"], ["GET", "/api/claims"], ["GET", "/api/apikeys"], ["GET", "/api/audit"], ["POST", "/api/claims"]]) {
       expect((await call(m, p, { body: m === "GET" ? undefined : {} })).status, `${m} ${p}`).toBe(401);

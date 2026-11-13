@@ -40,7 +40,8 @@ const rpcUrl = process.env.QORVEX_TESTNET_RPC_URLS?.split(",")[0] ?? NETWORKS.te
 
 const full = process.argv.includes("--full");
 /** Balances for the minimal profile (tighter: no DAO proposals, smaller key allowance). */
-const MINIMAL_BALANCE: Partial<Record<AccountName, number>> = { guardian: 2.3, watcher: 0.25, owner: 0.3, usdc: 1.75, ledger: 2.25, alice: 0.1, mallory: 0.2 };
+// Each test account needs its storage plus fees: on testnet a 100-150 Tgas call reserves ~0.1-0.15 NEAR up front.
+const MINIMAL_BALANCE: Partial<Record<AccountName, number>> = { guardian: 2.3, watcher: 0.3, owner: 0.5, usdc: 1.75, ledger: 2.25, alice: 0.3, mallory: 0.5 };
 
 /** Every account the full demo world creates, with its testnet balance and what it is. */
 const fullPlan: Record<AccountName, { balance: number; sub: string; what: string; parent?: AccountName }> = {
@@ -112,7 +113,15 @@ const world = await deployDemoWorld(
   root,
   rpcUrl,
   "testnet",
-  { balances, minimal: !full, log: console.log },
+  {
+    balances,
+    minimal: !full,
+    saveKey: (label, accountId, secretKey) => {
+      created[`${label}:${accountId}`] = secretKey;
+      fs.writeFileSync(keysFile, JSON.stringify(created, null, 2), { mode: 0o600 });
+    },
+    log: console.log,
+  },
 );
 const A = world.accounts;
 console.log(`authorising guardian on ${A.ledger.accountId} (owner signs): ${await authoriseGuardian(near, A.owner.accountId, A.ledger.accountId, A.guardian.accountId)}`);
