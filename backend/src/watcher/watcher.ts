@@ -45,6 +45,12 @@ export interface WatcherDeps {
   heartbeatMs?: number;
   /** Minimum ms between evaluations of the same rule (protects public RPCs for busy read-only targets). */
   minEvalIntervalMs?: (p: Protocol) => number;
+  /**
+   * Multi-tenancy: may this watch trigger the guardian? Only the workspace
+   * holding verified on-chain authority over the contract may; every other
+   * workspace's watch of the same contract is alert-only. Undefined = allowed.
+   */
+  mayPause?: (p: Protocol) => { ok: true } | { ok: false; reason: string };
   log?: (s: string) => void;
 }
 
@@ -312,8 +318,11 @@ export class Watcher {
     s.openBreach = breach.id;
     this.log(`BREACH ${rule.id} on ${p.contractId} at block ${triggerBlock} (confirmed at ${breach.detectedAtBlock})`);
 
+    const gate = wantsPause ? (this.d.mayPause?.(p) ?? { ok: true as const }) : { ok: true as const };
     if (!wantsPause) {
       breach.pause = { status: "skipped", error: "alert-only rule" };
+    } else if (!gate.ok) {
+      breach.pause = { status: "skipped", error: gate.reason };
     } else if (alreadyPaused) {
       breach.pause = { status: "skipped", error: "contract had already paused itself (in-contract guard)" };
     } else if (!executor || !prepared) {

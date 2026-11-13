@@ -1,0 +1,26 @@
+{
+  "name": "@qorvex/relayer-sdk",
+  "version": "0.1.0",
+  "description": "Spending limits for NEAR gas relayers and payout services: ask Qorvex before you sign. Zero dependencies.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

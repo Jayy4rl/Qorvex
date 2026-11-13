@@ -18,6 +18,11 @@ import { explainBreach } from "../ai/explain.ts";
 import { Alerter, channelsFromEnv, type AlertChannel } from "../alerts/alerts.ts";
 import { networkRuntime, type NetworkRuntime } from "./runtime.ts";
 import { createServer, type ApiDeps } from "./api.ts";
+import { openDb } from "../db/db.ts";
+import { NearRpc } from "../near/rpc.ts";
+import { createAuth, logEmailSender, type QorvexAuth } from "../auth/auth.ts";
+import { Tenancy } from "../tenancy/tenancy.ts";
+import { mayPause, reverifyAll, reverifyClaim, type ClaimDeps } from "../tenancy/claims.ts";
 
 interface StartOptions {
   networks: NetworkId[];
@@ -29,11 +34,15 @@ interface StartOptions {
   demo?: ApiDeps["demo"];
   extraAlertChannels?: AlertChannel[];
   startWatchers?: boolean;
+  /** QORVEX_SINGLE_TENANT: the admin token acts as Owner of the "default" workspace. Default true. */
+  singleTenant?: boolean;
   log?: (s: string) => void;
 }
 
 export interface Qorvex {
   store: Store;
+  auth: QorvexAuth;
+  tenancy: Tenancy;
   runtimes: Map<NetworkId, NetworkRuntime>;
   ai: NearAiClient;
   url: string;
@@ -43,20 +52,61 @@ export interface Qorvex {
 export async function startQorvex(o: StartOptions): Promise<Qorvex> {
   const log = o.log ?? ((s: string) => console.log(s));
   const dir = o.dataDir ?? dataDir();
-  const store = new Store(path.join(dir, "store"));
+  const db = openDb(path.join(dir, "qorvex.db"));
+  const store = new Store(path.join(dir, "store"), db);
+  const tenancy = new Tenancy(db);
   const ai = new NearAiClient(aiConfig());
   const alerter = new Alerter([...channelsFromEnv(), ...(o.extraAlertChannels ?? [])]);
   const publicUrl = o.publicUrl ?? `http://localhost:${o.port}`;
   const runtimes = new Map<NetworkId, NetworkRuntime>();
   for (const id of o.networks) {
-    runtimes.set(id, networkRuntime(id, { store, alerter, dataDir: dir, publicUrl, explain: (b) => explainBreach(ai, b), log: (s) => log(`[${id}] ${s}`) }, o.rpcOverrides?.[id] ?? {}));
+    runtimes.set(id, networkRuntime(id, { store, alerter, dataDir: dir, publicUrl, explain: (b) => explainBreach(ai, b), mayPause: (p) => mayPause(tenancy, p), log: (s) => log(`[${id}] ${s}`) }, o.rpcOverrides?.[id] ?? {}));
   }
+  // Wallet sign-in needs mainnet/testnet RPC to check the signer's key even when this server
+  // does not watch that network (e.g. the local sandbox demo).
+  const signInRpcs = new Map<NetworkId, NearRpc>();
+  const rpcFor = (n: NetworkId) => {
+    const rt = runtimes.get(n)?.rpc;
+    if (rt || n === "sandbox") return rt;
+    if (!signInRpcs.has(n)) {
+      const urls = env(`QORVEX_${n.toUpperCase()}_RPC_URLS`)?.split(",").map((s) => s.trim()).filter(Boolean) ?? NETWORKS[n].rpcUrls;
+      signInRpcs.set(n, new NearRpc(urls, { retries: 2 }));
+    }
+    return signInRpcs.get(n);
+  };
+  const auth = createAuth({
+    db,
+    publicUrl,
+    secret: env("QORVEX_AUTH_SECRET"),
+    dataDir: dir,
+    rpcFor,
+    email: logEmailSender(log),
+    extraOrigins: (env("QORVEX_TRUSTED_ORIGINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    onNearSignIn: async (userId, accountKey) => {
+      const joined = tenancy.acceptNearInvites(userId, accountKey);
+      if (joined.length) log(`NEAR invite accepted: ${accountKey} joined ${joined.join(", ")}`);
+    },
+  });
+  await auth.migrate();
+  const claimDeps: ClaimDeps = {
+    tenancy,
+    rpcFor,
+    guardianFor: (n) => runtimes.get(n)?.guardianId,
+    onLapse: (c, why) => void alerter.send(`Authority lapsed: ${c.contractId}`, `${why}. Automatic pause is off for this workspace until authority is verified again; monitoring continues.`, { claimId: c.id }),
+  };
+  // Re-verify every claim from chain state every 6 hours (and lapse the ones that no longer hold).
+  const claimTimer = setInterval(() => void reverifyAll(claimDeps).catch((e) => log(`claim re-verification failed: ${(e as Error).message}`)), 6 * 3600_000);
+  claimTimer.unref();
   const server = createServer({
     store,
     networks: runtimes,
     ai,
     alerter,
     adminToken: o.adminToken,
+    auth,
+    tenancy,
+    singleTenant: o.singleTenant ?? true,
+    reverifyClaim: (ws, n, c) => reverifyClaim(claimDeps, ws, n, c),
     webDir: WEB_DIST_DIR,
     demo: o.demo,
     backtestDays: (n) => Number(env(`QORVEX_${n.toUpperCase()}_BACKTEST_DAYS`, n === "mainnet" ? "30" : n === "testnet" ? "7" : "1")),
@@ -72,14 +122,17 @@ export async function startQorvex(o: StartOptions): Promise<Qorvex> {
   log(`Qorvex listening on ${publicUrl} (networks: ${o.networks.join(", ")}; AI mode: ${ai.cfg.mode}; alerts: ${alerter.configured.join(", ") || "none configured"})`);
   return {
     store,
+    auth,
+    tenancy,
     runtimes,
     ai,
     url: publicUrl,
     stop: async () => {
+      clearInterval(claimTimer);
       for (const rt of runtimes.values()) rt.watcher.stop();
       await new Promise<void>((r) => server.close(() => r()));
       server.closeAllConnections?.();
-      store.flush();
+      store.close();
     },
   };
 }
@@ -97,7 +150,10 @@ async function main() {
   }
   const port = Number(env("PORT", "8787"));
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a TCP port number");
-  const q = await startQorvex({ networks, port, adminToken, publicUrl: env("PUBLIC_URL") });
+  const singleTenant = env("QORVEX_SINGLE_TENANT", "true") !== "false";
+  // On Railway the public domain is provided; it is also the NEP-413 recipient wallets sign for.
+  const publicUrl = env("PUBLIC_URL") ?? (env("RAILWAY_PUBLIC_DOMAIN") ? `https://${env("RAILWAY_PUBLIC_DOMAIN")}` : undefined);
+  const q = await startQorvex({ networks, port, adminToken, publicUrl, singleTenant });
   const shutdown = async () => {
     await q.stop();
     process.exit(0);

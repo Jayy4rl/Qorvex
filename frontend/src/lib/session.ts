@@ -1,6 +1,6 @@
 /**
- * Operator session. The Qorvex backend has one operator credential, QORVEX_ADMIN_TOKEN
- * (printed by `npm start` / `npm run demo` when unset). There are no user accounts.
+ * Operator token for self-hosted, single-tenant servers (QORVEX_SINGLE_TENANT=true): QORVEX_ADMIN_TOKEN
+ * (printed by `npm start` / `npm run demo` when unset). Hosted users sign in with a wallet or email instead (session cookie).
  * The token is kept for this browser tab only (sessionStorage).
  */
 const KEY = "qorvex.operatorToken";

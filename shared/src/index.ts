@@ -181,6 +181,8 @@ export interface BacktestResult {
 
 export interface Protocol {
   id: string;
+  /** Owning workspace. Absent on records from before multi-tenancy: those belong to "default". */
+  workspaceId?: string;
   name: string;
   network: NetworkId;
   contractId: string;
@@ -300,6 +302,8 @@ export interface Decision {
 
 export interface Relayer {
   id: string;
+  /** Owning workspace. Absent on records from before multi-tenancy: those belong to "default". */
+  workspaceId?: string;
   name: string;
   /** SHA-256 of the relayer's API token; the token itself is shown once. */
   tokenHash: string;
@@ -336,6 +340,8 @@ export interface PauseRecord {
   timestamp_ns: string | number;
   status: string;
   council_override?: boolean;
+  /** What was paused: "ALL" or a near-plugins feature key (guardian 1.1). */
+  scope?: string;
 }
 
 export interface TokenMeta {
@@ -454,4 +460,99 @@ export interface LiveEvent {
   data?: any;
   /** True when the event concerns a published (public) protocol. */
   public?: boolean;
+}
+
+// ------------------------------------------------------- multi-tenancy (SaaS)
+
+export type WorkspaceRole = "owner" | "admin" | "responder" | "viewer";
+
+/** Protection ladder (change request §6.1). */
+export type ProtectionLevel = 0 | 1 | 2 | 3;
+
+export const PROTECTION_LEVELS: Record<ProtectionLevel, { name: string; can: string[]; cannot: string[] }> = {
+  0: {
+    name: "Watching",
+    can: ["Check rules on every block that touches the contract", "Alert you (Telegram, webhook)", "Show an unofficial status page"],
+    cannot: ["Pause anything", "Move or hold funds"],
+  },
+  1: {
+    name: "Assisted pause",
+    can: ["Everything in Watching", "Put a ready-to-sign pause transaction or DAO proposal in every alert"],
+    cannot: ["Pause without your signature", "Move or hold funds"],
+  },
+  2: {
+    name: "Automatic pause",
+    can: ["Everything in Assisted pause", "Pause through the guardian within seconds of a confirmed breach, at most once an hour unless your council allows another"],
+    cannot: ["Unpause (only you or your DAO can)", "Change limits", "Move or hold funds"],
+  },
+  3: {
+    name: "In-contract guard",
+    can: ["Everything in Automatic pause", "Block over-limit outflows and pause in the same transaction, even if Qorvex is down"],
+    cannot: ["Unpause", "Change limits", "Move or hold funds"],
+  },
+};
+
+/** Where a detection fact came from (change request §8). */
+export type FactSource = "detected" | "suggested-by-ai" | "confirmed-by-you";
+
+/** Result of the read-only probes run when a contract is added, nightly and on code changes (§6.2). */
+export interface Detection {
+  network: NetworkId;
+  contractId: string;
+  at: string;
+  hasContract: boolean;
+  codeHash: string | null;
+  fullAccessKeys: number;
+  /** What kind of contract the probes recognised. */
+  kind: "qorvex-guard" | "near-plugins" | "sputnik-dao" | "fungible-token" | "unknown";
+  plugins: { pausable: boolean; pausedFeatures: string[]; roles: string[]; superAdmins: string[]; pauseRole: string | null } | null;
+  guard: { owner: string; guardian: string | null; selfAccounting: boolean } | null;
+  /** Who controls the contract: owner view, near-plugins super-admin, or the DAO itself. */
+  owner: { accountId: string; via: string; isDao: boolean; council: string[] } | null;
+  /** The contract is itself a Sputnik DAO: its council. */
+  dao: { council: string[]; roles: string[] } | null;
+  token: { symbol: string; decimals: number } | null;
+  /** Registered with this network's Qorvex guardian (guardian 1.1 get_target). */
+  guardianRegistration: { adapter: string; council: string; scopes: string[] } | null;
+  level: ProtectionLevel;
+  recommended: { level: ProtectionLevel; path: "set-guardian" | "near-plugins-grant" | "dao-firewall" | "watch-only"; explain: string; signer: string | null; viaDao: boolean };
+  /** Every probe and what it returned, for the "how do we know" panel. */
+  probes: { name: string; ok: boolean; value?: unknown; source: FactSource }[];
+}
+
+export interface AuthorityClaim {
+  id: string;
+  workspaceId: string;
+  network: NetworkId;
+  contractId: string;
+  method: "owner-account" | "near-plugins-admin" | "dao-council" | "contract-account" | "guardian-transaction" | "admin-token";
+  evidence: { account: string; detail: string };
+  status: "verified" | "lapsed" | "pending";
+  verifiedAt: string | null;
+}
+
+/** A transaction for the user's wallet to sign (near-connect signAndSendTransactions). */
+export interface WalletTx {
+  receiverId: string;
+  actions: { type: "FunctionCall"; params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string } }[];
+  /** Plain-English line shown above the wallet prompt. */
+  explain: string;
+}
+
+/** A ready-made rule the operator fills in with a few fields (friction item 3). */
+export interface RuleTemplate {
+  id: string;
+  title: string;
+  explain: string;
+  /** Why this template is offered for this contract. */
+  because: string;
+  fields: { name: string; label: string; kind: "token" | "amount" | "seconds" | "account" | "method" | "bps"; default: string; help?: string }[];
+}
+
+export interface ContractCheck {
+  detection: Detection;
+  templates: RuleTemplate[];
+  /** Workspaces never see each other: only whether the public page is claimed. */
+  claimed: boolean;
+  statusPageId: string | null;
 }

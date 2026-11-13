@@ -26,7 +26,7 @@ import { CONTRACTS_DIR } from "../paths.ts";
 const USDC_DECIMALS = 6;
 export const usdc = (n: number | bigint) => (BigInt(n) * 10n ** BigInt(USDC_DECIMALS)).toString();
 
-type AccountName =
+export type AccountName =
   | "guardian"
   | "watcher"
   | "firewall"
@@ -89,8 +89,17 @@ export function daoPolicy(council: string[], requestors: string[]) {
 interface DeployOptions {
   /** NEAR amounts; defaults suit the sandbox. Testnet uses smaller values. */
   balances?: Partial<Record<AccountName, string>>;
+  /**
+   * Only what the ghost-balance replay needs: guardian, watcher, owner, token,
+   * ledger, alice, mallory (~7 testnet NEAR). Skips the DAOs, vault, firewall
+   * and the Trezu sponsor-drain actors; those demos run on the local sandbox.
+   */
+  minimal?: boolean;
   log?: (s: string) => void;
 }
+
+/** Accounts the minimal world creates. */
+export const MINIMAL_ACCOUNTS: AccountName[] = ["guardian", "watcher", "owner", "usdc", "ledger", "alice", "mallory"];
 
 export async function deployDemoWorld(near: Near, keyStoreAdd: (a: KeyedAccount) => Promise<void>, root: string, rpcUrl: string, networkId: string, opts: DeployOptions = {}): Promise<DemoWorld> {
   const log = opts.log ?? (() => {});
@@ -115,10 +124,11 @@ export async function deployDemoWorld(near: Near, keyStoreAdd: (a: KeyedAccount)
   const ledgerWasm = readWasm("demo-ledger");
   const tokenWasm = readWasm("demo-token");
   const guardianWasm = readWasm("guardian");
-  const daoWasm = readWasm("sputnikdao2");
+  const daoWasm = opts.minimal ? new Uint8Array() : readWasm("sputnikdao2");
 
   const acc = {} as DemoWorld["accounts"];
   const make = async (name: AccountName, accountId: string, parent: string, wasm?: Uint8Array, init?: { method: string; args: object }) => {
+    if (opts.minimal && !MINIMAL_ACCOUNTS.includes(name)) return;
     log(`creating ${accountId}${wasm ? " (+contract)" : ""}`);
     acc[name] = await createAccount(near, parent, accountId, { balance: bal[name], wasm, init });
     await keyStoreAdd(acc[name]);
@@ -155,24 +165,26 @@ export async function deployDemoWorld(near: Near, keyStoreAdd: (a: KeyedAccount)
   log("adding the pause-only and reject-only function-call keys");
   await near
     .transaction(id("watcher"))
-    .addKey(pauseKey.publicKey, { type: "functionCall", receiverId: id("guardian"), methodNames: ["pause"], allowance: "0.5 NEAR" })
+    .addKey(pauseKey.publicKey, { type: "functionCall", receiverId: id("guardian"), methodNames: ["pause"], allowance: opts.minimal ? "0.2 NEAR" : "0.5 NEAR" })
     .send({ waitUntil: "FINAL" });
-  await near
-    .transaction(id("firewall"))
-    .addKey(firewallKey.publicKey, { type: "functionCall", receiverId: id("treasury"), methodNames: ["act_proposal"], allowance: "0.5 NEAR" })
-    .send({ waitUntil: "FINAL" });
+  if (!opts.minimal) {
+    await near
+      .transaction(id("firewall"))
+      .addKey(firewallKey.publicKey, { type: "functionCall", receiverId: id("treasury"), methodNames: ["act_proposal"], allowance: "0.5 NEAR" })
+      .send({ waitUntil: "FINAL" });
+  }
 
   const owner = id("owner");
   log("registering ledger, vault and treasury with the token, minting demo USDC");
-  for (const a of [id("ledger"), id("vault"), id("treasury"), id("mallory-dao")]) {
+  for (const a of opts.minimal ? [id("ledger")] : [id("ledger"), id("vault"), id("treasury"), id("mallory-dao")]) {
     await near.call(id("usdc"), "storage_deposit", { account_id: a }, { signerId: owner, attachedDeposit: "0.00125 NEAR", gas: "30 Tgas" });
   }
   await near.call(id("usdc"), "mint", { account_id: id("alice"), amount: usdc(1_000_000) }, { signerId: owner, gas: "30 Tgas" });
   await near.call(id("usdc"), "mint", { account_id: id("mallory"), amount: usdc(50_000) }, { signerId: owner, gas: "30 Tgas" });
-  await near.call(id("usdc"), "mint", { account_id: id("treasury"), amount: usdc(500_000) }, { signerId: owner, gas: "30 Tgas" });
+  if (!opts.minimal) await near.call(id("usdc"), "mint", { account_id: id("treasury"), amount: usdc(500_000) }, { signerId: owner, gas: "30 Tgas" });
 
   log("alice deposits 250,000 USDC into ledger and vault");
-  for (const target of [id("ledger"), id("vault")]) {
+  for (const target of opts.minimal ? [id("ledger")] : [id("ledger"), id("vault")]) {
     await near.call(
       id("usdc"),
       "ft_transfer_call",

@@ -60,7 +60,7 @@ describe("internal links", () => {
     for (const [from, html] of pages) {
       for (const href of internalLinks(html)) {
         const [path, anchor] = href.split("#");
-        const known = path === "/" || path === "/sign-in" || path === "/app" || path === "/docs" || DOCS.some((d) => docPath(d.slug) === path);
+        const known = path === "/" || path === "/sign-in" || path === "/app" || path === "/check" || path === "/docs" || DOCS.some((d) => docPath(d.slug) === path);
         if (!known) {
           problems.push(`${from} → ${href}: unknown route`);
           continue;

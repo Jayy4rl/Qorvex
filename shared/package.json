@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Types shared by the Qorvex backend and frontend: the domain model and the HTTP API's response shapes. Types only, no runtime code.",
+  "description": "Types shared by the Qorvex backend and frontend: the domain model, the HTTP API's response shapes and a few constant tables (protection levels). No logic.",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts"

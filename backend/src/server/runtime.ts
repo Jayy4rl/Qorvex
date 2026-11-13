@@ -50,6 +50,8 @@ interface RuntimeOptions {
   dataDir: string;
   explain?: (b: Breach) => Promise<Breach["explanation"] | undefined>;
   publicUrl: string;
+  /** Multi-tenancy pause gate (tenancy/claims.ts mayPause). */
+  mayPause?: (p: Protocol) => { ok: true } | { ok: false; reason: string };
   log?: (s: string) => void;
 }
 
@@ -109,6 +111,7 @@ export function networkRuntime(id: NetworkId, o: RuntimeOptions, overrides: { rp
     minEvalIntervalMs: (p: Protocol) => (p.unofficial ? 15_000 : 0),
     heartbeatBlocks: id === "mainnet" ? 100 : 30,
     heartbeatMs: id === "sandbox" ? 0 : 30_000,
+    mayPause: o.mayPause,
     log: o.log,
   });
   return { id, rpcUrls, rpc, archive, neardataUrl: preset?.neardataUrl, stream, executors, rejecters, firewallAccount, watcher, watcherAccount, watcherPublicKey, guardianId };

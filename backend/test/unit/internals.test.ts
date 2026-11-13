@@ -35,19 +35,40 @@ describe("store", () => {
     expect(again.lastPassed("p", "r")?.blockHeight).toBe(1);
   });
 
-  it("rewrites the reads file only when reads changed", () => {
+  it("writes only changed rows, and keeps in-place edits made before a flush", () => {
     const dir = tmp();
     const s = new Store(dir);
     s.recordEvaluation("p", ev("read-1"));
-    s.flush();
-    const readsFile = path.join(dir, "reads.json");
-    const before = fs.statSync(readsFile).mtimeMs;
-    fs.utimesSync(readsFile, new Date(0), new Date(0));
     s.setWatcherProgress("sandbox", 5, "test");
     s.flush();
-    expect(fs.statSync(readsFile).mtimeMs).toBe(0);
-    expect(before).toBeGreaterThan(0);
-    expect(JSON.parse(fs.readFileSync(path.join(dir, "state.json"), "utf8")).watcher.sandbox.lastBlock).toBe(5);
+    const stamp = () => (s.db.prepare("SELECT updated_at FROM store_docs WHERE kind = 'evaluations'").get() as { updated_at: number }).updated_at;
+    s.db.prepare("UPDATE store_docs SET updated_at = 0 WHERE kind = 'evaluations'").run();
+    s.setWatcherProgress("sandbox", 6, "test");
+    s.flush();
+    expect(stamp()).toBe(0); // unchanged row not rewritten
+    const p = { id: "prt_1", name: "x", network: "sandbox", contractId: "x.test", status: "connected", published: false, createdAt: "" } as const;
+    s.upsertProtocol({ ...p });
+    s.protocol("prt_1")!.published = true; // mutated in place, no put: still persisted by the next flush
+    s.flush();
+    const again = new Store(dir, s.db);
+    expect(again.protocol("prt_1")?.published).toBe(true);
+    expect(again.watcherProgress("sandbox")?.lastBlock).toBe(6);
+    expect((s.db.prepare("SELECT count(*) AS n FROM store_reads").get() as { n: number }).n).toBe(1);
+  });
+
+  it("imports a legacy JSON store once", () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, "state.json"), JSON.stringify({ protocols: [{ id: "prt_old", name: "old", network: "sandbox", contractId: "o.test", status: "connected", published: true, createdAt: "" }], watcher: { sandbox: { lastBlock: 9, source: "x", at: "" } } }));
+    fs.writeFileSync(path.join(dir, "reads.json"), JSON.stringify([{ ...ev("legacy-read").reads[0], protocolId: "prt_old", ruleId: "r" }]));
+    const s = new Store(dir);
+    expect(s.protocol("prt_old")?.name).toBe("old");
+    expect(s.read("legacy-read")?.protocolId).toBe("prt_old");
+    expect(fs.existsSync(path.join(dir, "state.json"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, "state.json.imported"))).toBe(true);
+    s.close();
+    const again = new Store(dir);
+    expect(again.watcherProgress("sandbox")?.lastBlock).toBe(9);
+    expect(again.protocols()).toHaveLength(1);
   });
 
   it("deduplicates relayer decisions by id and caps the history", () => {

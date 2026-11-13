@@ -1,0 +1,13 @@
+.git
+**/node_modules
+data
+frontend/dist
+sdk/dist
+contracts/target
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+submission*.json
+.claude

@@ -38,39 +38,43 @@ Requirements: Node.js 22 or newer (tested on 24.21), Linux or macOS on x86_64/ar
    - `vault paused in the deposit transaction itself (...): self-accounting: credited 290000000000 > backing 250000000000`.
    - `without Qorvex: sponsored 100, sponsor balance 0.6 NEAR -> 0.40575 NEAR`, then `with Qorvex check(): sponsored 8, refused 92 ...`, and `first refusal: spend cap: ...`.
    - `Guardian on-chain pause history ...` with `"rule_id":"solvency-usdc"` and `"status":"Paused"`.
-3. **Test the watcher by hand in the Watcher Lab:** run `npm run demo` (without `--auto`) and open `http://localhost:8787/lab`; paste the operator token it prints. Go through the seven steps:
-   1. connect the ledger
-   2. have the AI draft the rules, then approve them
-   3. let the guardian pause it
-   4. publish the status page
-   5. act as an honest user (Alice deposits and withdraws; the feed stays green)
-   6. run the Intents ghost-balance exploit as Mallory: a red line, then "PAUSED at block N" and "4 blocks vs ~40 hours", and Mallory's withdrawal is rejected
-   7. recover and run it again
-
-   The right-hand panel shows the ledger's owed/held and what the watcher sees on every block.
-4. **Use the operator console:** with the same `npm run demo`, open `http://localhost:8787/` and sign in. To work on the UI with hot reload, run `npm run dev:web` and open `http://localhost:5173/` instead; it proxies the API to :8787. See [frontend/README.md](frontend/README.md). Then sign in with the operator token it prints. Everything that runs on the local sandbox carries a striped "Simulated · local sandbox" label. Recorded AI output carries a "Recorded AI response" label.
-   1. **Connect.** Click "Connect asset", click "Use" next to the demo ledger, then Connect. You land on the asset page. The state is "Needs attention" and the setup strip shows Source → Policies → Authority → Status page.
-   2. **Policies tab.** Click "Load demo source", then "Draft policies". You see two drafted policies (solvency and outflow rate), each with its parameters in plain units, a live value and a backtest (`Fired 0 times across 26 samples`). Choose "Alert + auto-pause" and click Approve. A dialog spells out what Qorvex will do on a breach. "Auto-pause" is disabled for any policy whose backtest fired. "Write a policy by hand" adds a policy through the same validator and backtest.
-   3. **Authority tab.** It shows the chain watcher key → guardian → your contract, what Qorvex can and cannot do, and the exact transaction plus a near-cli-rs command. Click "Sign with the sandbox owner key", then "Read back and verify". You see four green checks, including `Watcher key limited to guardian.pause`. The state turns "Healthy".
-   4. **Status page tab.** Click "Publish status page". The public page at `/status/<id>` needs no token.
-   5. **Simulations** (left nav). Click "Run exploit on the ledger". Within a few seconds, Overview shows "1 paused", Incidents shows "Paused +4 blocks", and the incident page shows evidence (owed 290,000 USDC, held 250,000 USDC, shortfall 40,000 USDC), replayable `curl` reads, a measured timeline (block received +0.67 s … contract paused +3.6 s), the pause transaction and recovery steps. The public page turns "Paused: outflows are stopped".
-   6. **DAO firewall.** Connect the Treasury DAO the same way, draft and approve its policy as "Alert + vote to reject", then on its Authority tab click "Propose and approve with the sandbox council" and "Read back and verify". In Simulations, submit "Over-cap transfer", then "Council approves the last proposal". The DAO's Proposals tab shows "Breaks policy · Rejected +3 blocks", and the council's approval fails with `ERR_PROPOSAL_NOT_READY_FOR_VOTE`.
-   7. **Relayers.** In Simulations, click "Sponsor drain (Trezu #1871) → With check()": you see `8 sponsored, 92 refused`. Open Relayers → the demo relayer to see budgets, the proposal policy and a decision log where every refusal has its reason.
-   8. **Authority** (left nav) compares the three layers (in-contract, external monitoring, relayer) and lists every permission this server holds, per network and per asset.
+3. **Use the console:** run `npm run demo` (with or without `--auto`), open `http://localhost:8787/sign-in`, choose **Operator token** and paste the token it prints. To work on the UI with hot reload, run `npm run dev:web` and open `http://localhost:5173/`; it proxies the API to :8787, and a local server trusts that origin for sign-in.
+   1. **Connect.** Click **Add a contract**, choose `sandbox`, paste the ledger's account id (printed by the demo, e.g. `ledger.<root>`), click **Check**, then **claim and protect it**. You land on the contract page.
+   2. **Rules tab.** Click **Load demo source**, then **Draft rules with AI**. The recorded Qwen drafts appear with their live values and backtests (`fired 0 times`). Approve the solvency rule as **alert + auto-pause**. Templates and hand-written rules go through the same validator and backtest.
+   3. **Setup tab.** Click **Sign with the sandbox owner key** (wallets cannot sign for the local sandbox; on testnet and mainnet the same transaction goes to your wallet). The level turns to 3.
+   4. **Status page & authority tab.** Publish the status page. `/status/<id>` needs no sign-in; click any number to see the RPC read and its `curl`.
+   5. **Simulations** (top bar). Run the exploit as Mallory: the ledger panel shows owed > held, then **PAUSED**, and "Paused at block N, 4 blocks after the breaking block". **Mallory tries to cash out** is rejected. **Recover and re-arm** puts the books right and unpauses as the owner. The vault, Trezu and DAO-firewall replays sit next to it.
+   6. **Incidents tab** (or the link under the outcome): the evidence with reproducible reads, the measured timeline, the pause transaction, the AI explanation written after the pause, and the recovery transactions Qorvex prepares (it cannot sign them).
+   Everything on the sandbox is labelled "Simulated · local sandbox"; recorded AI output is labelled "Recorded AI response".
+4. **Check any real contract, no account needed:** open `/check`, pick mainnet and try `intents.near`: Qorvex reads the chain and shows how it could protect it, who controls it and what they would sign.
 5. **Run the tests and checks:**
    - `npm run check`: type-checks every workspace, runs the 67 unit tests and builds the frontend (~30 s).
    - `npm test`: the unit tests plus 16 end-to-end tests on a real local sandbox (~4 min).
    - `npm run test:contracts` (needs Rust): 34 contract unit tests.
 6. **Watch mainnet NEAR Intents, read-only:** `QORVEX_NETWORKS=mainnet npm start`, then in another shell `QORVEX_ADMIN_TOKEN=<token printed by the server> npm run seed:intents`. The seed adds three solvency rules on `intents.near`: owed is `mt_supply("nep141:<token>")` and held is `<token>.ft_balance_of("intents.near")`, for USDC, USDT and wNEAR. Each is backtested against 30 days of archival state, approved alert-only and published at `/status/<id>`. The public `archival-rpc.mainnet.near.org` rate-limits heavily (HTTP 429), so the first backtest can take an hour or stall. It resumes from the cache on rerun, or set `QORVEX_MAINNET_ARCHIVAL_RPC` to a paid archival endpoint. Live values were checked on 2026-11-10: owed ≤ held held for all three tokens. The page is marked unofficial, and Qorvex holds no key for `intents.near`.
 
+## Accounts, workspaces and onboarding
+
+Qorvex is multi-tenant. Users sign in with a NEAR wallet (NEP-413, verified in this repository: the signed `recipient` must be this host, the nonce is single-use, the key must be a full-access key read from the chain) or with email and password (Better Auth). A user belongs to one or more **workspaces** with one of four roles: Owner, Admin, Responder, Viewer ([backend/src/auth/access.ts](backend/src/auth/access.ts)). Every record belongs to a workspace, and a test walks every route in the table to check that another workspace's user never gets a 2xx.
+
+- **Start with only a contract id:** `/check` (no account) runs read-only probes (near-plugins Pausable/ACL, owner views, qorvex-guard, Sputnik `get_policy`, NEP-141) and shows the protection level, what Qorvex can and cannot do there, the recommended path and the rule templates that fit.
+- **Claim:** sign one message with the account that controls the contract (the owner, a near-plugins super-admin, or a member of the owning DAO's council). The claim is re-checked from chain state on every sensitive action and every 6 hours; when it lapses, automatic pause turns off for that workspace and monitoring continues. Only the workspace with a verified claim can trigger the guardian or publish the official status page.
+- **Authorise in the wallet:** the server builds the transactions (`set_guardian` for qorvex-guard; `acl_grant_role` + `register_plugins_target` for near-plugins; the same as DAO proposals when a DAO controls the contract) and the browser sends them through NEAR Connect.
+- **Rules from templates:** outflow cap, ledger solvency and treasury policy, filled with a few fields and then validated and backtested like any other rule.
+- **Step-up signatures:** approving a rule that can pause, creating an API key and claiming a contract need a fresh wallet signature bound to the action and its parameters, stored in the append-only audit log.
+- **Relayers:** `check()` is decided on the server against one shared spend history, so several relayer instances share one budget. Install [`@qorvex/relayer-sdk`](sdk/README.md) (zero dependencies).
+
+Storage is one SQLite file (`data/qorvex.db`, Node's built-in `node:sqlite`) holding the domain records, Better Auth's tables, claims, the audit log and relayer spend. A JSON store from an earlier version is imported on first start.
+
 ## Repository layout
 
-An npm workspace with three packages and the Rust contracts:
+An npm workspace with four packages and the Rust contracts:
 
 | Path | What | Checks |
 | --- | --- | --- |
 | [backend/](backend/) | `@qorvex/backend`: the Qorvex service (HTTP API, watcher, block streams, rules, proposal firewall, AI drafting, alerts, relayer SDK) in `src/`; the local demo world, scripted demo actors and the mock relayer in `src/demo/`; CLI scripts (`demo`, `deploy-testnet`, `seed-intents`, `firewall-replay`) in `scripts/`; recorded AI responses and the mainnet replay evidence in `fixtures/`; unit and sandbox e2e tests in `test/` | `npm run typecheck -w @qorvex/backend`, `npm test` |
 | [frontend/](frontend/) | `@qorvex/frontend`: operator console, public status pages and Watcher Lab (React + Vite). See [frontend/README.md](frontend/README.md). | `npm run build:web` |
+| [sdk/](sdk/) | `@qorvex/relayer-sdk`: the zero-dependency relayer client (`check()`, `checkProposal()`, fail-open cap during outages) | `npm run build -w @qorvex/relayer-sdk` |
 | [shared/](shared/) | `@qorvex/shared`: the domain model and API response types, type-only. The backend produces these shapes and the frontend renders them, so both compile against one definition. | `npm run typecheck` |
 | [contracts/](contracts/) | Rust: `qorvex-guard` crate, `guardian` contract, demo ledger and token; built wasm in `contracts/wasm/`, the vendored Sputnik DAO wasm in `contracts/vendor/`; `build.sh` rebuilds the wasm | `npm run test:contracts` |
 
@@ -97,6 +101,7 @@ Runtime data (stores, caches, sandbox and testnet keys) goes to `data/` at the r
 **Trust model**
 
 - **The only key Qorvex holds:** a function-call access key on the watcher account, with `receiver_id = guardian` and `method_names = ["pause"]`. It cannot attach deposits. The demo and the e2e tests check that this key cannot call `set_watchers`, `register_target` or `unpause`.
+- **One guardian, many customers:** each registered target has its own adapter, council, allowed pause scopes and cooldown. Adapters: `QorvexGuard` (`pause(rule_id, evidence_hash)`, the target registers itself from `set_guardian`), `NearPlugins` (`pa_pause_feature(key)`, registered by a near-plugins super-admin or pause-role admin, which the guardian reads back from the target before accepting, refunding the deposit otherwise) and `CustomMethod` (a pause method and argument template, registered by the target account itself; values are substituted into JSON string fields only). The council can narrow scopes (`set_scopes`) or deregister. Every forwarded call attaches zero deposit.
 - **The guardian's limits:** it has no unpause, no limit setting and no transfer method. Only the owner, with 1 yoctoNEAR attached, can change the watcher list (G2), so a function-call key cannot do it. It allows at most one automatic pause per target per hour unless the target's council allows another (G4). Every pause is public through `pause_history(target)` (G3).
 - **The protected contract's controls:** it accepts `pause` only from the guardian. Unpausing and setting limits need the owner and 1 yoctoNEAR.
 - **What the AI does:** it only drafts rules and explains breaches. Rules start as `draft` with response `alert` and need a human to approve them. The pause decision is made by [backend/src/rules/evaluate.ts](backend/src/rules/evaluate.ts) and [backend/src/watcher/watcher.ts](backend/src/watcher/watcher.ts), with no model call on that path.
@@ -128,11 +133,28 @@ Every setting is in [.env.example](.env.example). Secrets are read from the envi
 
 ## Deploying to testnet
 
-1. **Fund an account.** Fund a testnet account with ~18 NEAR from the [faucet](https://docs.near.org/getting-started/faucet). Put `TESTNET_ACCOUNT_ID` and `TESTNET_PRIVATE_KEY` in `.env`.
-2. **Dry run.** `npm run deploy:testnet` prints the plan and changes nothing.
-3. **Deploy.** `npm run deploy:testnet -- --yes` creates the accounts, deploys the guardian, token and both ledgers, adds the pause-only key, and authorises the guardian on both ledgers. It prints the three `QORVEX_TESTNET_*` lines for `.env`.
-4. **Start watching.** `QORVEX_NETWORKS=testnet npm start`. The testnet watcher streams optimistic blocks from `testnet.neardata.xyz`.
-5. **Rebuilding contracts** needs Rust and `cargo install --locked cargo-near`, then `npm run build:contracts`.
+1. **Fund an account.** The default (minimal) world needs about **7.4 testnet NEAR**: the guardian, demo token and ledger, plus four small accounts. `--full` adds the DAOs, vault, firewall and Trezu actors and needs about 25 NEAR. Almost all of it is storage staking (about 1 NEAR per 100 KB of contract code), which is locked, not spent: deleting the accounts returns it. Get testnet NEAR from the [faucet](https://docs.near.org/getting-started/faucet), then put `TESTNET_ACCOUNT_ID` and `TESTNET_PRIVATE_KEY` in `.env`.
+2. **Dry run.** `npm run deploy:testnet` prints every account, its balance and the total, and changes nothing. It refuses to start if the root account cannot cover the total.
+3. **Deploy.** `npm run deploy:testnet -- --yes` creates the accounts (writing each key to `data/testnet/keys.json` as it goes), deploys the guardian, token and ledger, adds the pause-only key, and authorises the guardian. With `--full` the treasury DAO votes to authorise it on the vault. It prints the three `QORVEX_TESTNET_*` lines for `.env`.
+4. **Start watching.** `QORVEX_NETWORKS=testnet npm start`. The testnet watcher streams optimistic blocks from `testnet.neardata.xyz`. In the console, check and claim `ledger.<root>` on testnet, add the **Solvency** template (token `usdc.<root>`; the defaults read the guard's credited tally) and approve it as alert + auto-pause.
+5. **Replay the exploit on testnet.** `npm run replay:testnet -- state`, then `npm run replay:testnet -- ghost --yes`: the watcher pauses the ledger through the guardian. `npm run replay:testnet -- cash-out --yes` is rejected, and `rearm --yes` restores it. (AI drafting on testnet needs `QORVEX_AI_MODE=live`, because the recorded responses are keyed to the sandbox contracts.)
+6. **Rebuilding contracts** needs Rust and `cargo install --locked cargo-near`, then `npm run build:contracts` (or `bash contracts/build.sh guardian` to rebuild only the guardian: rebuilding the demo ledger changes its code hash, which the recorded AI responses are keyed by).
+
+## Hosting on Railway
+
+The repository deploys as one Docker service ([Dockerfile](Dockerfile), [railway.json](railway.json)). It must run as **one replica** with a persistent volume: the watcher is a single process and the SQLite database lives on the volume.
+
+1. In Railway, create a project from the GitHub repository. Railway reads `railway.json` and builds the Dockerfile.
+2. Add a **volume** to the service, mounted at `/data`.
+3. In **Settings → Networking**, generate a domain. The app reads it from `RAILWAY_PUBLIC_DOMAIN`, so `PUBLIC_URL` and the wallet sign-in recipient set themselves. Set `PUBLIC_URL` yourself only for a custom domain.
+4. Add variables:
+   - `QORVEX_ADMIN_TOKEN`: a long random string (`openssl rand -hex 24`). It is the operator token for the demo workspace; without it a new one is generated on every start.
+   - `QORVEX_AUTH_SECRET`: `openssl rand -hex 32` (otherwise generated into the volume).
+   - After the testnet deploy: `QORVEX_TESTNET_GUARDIAN`, `QORVEX_TESTNET_WATCHER_ACCOUNT`, `QORVEX_TESTNET_WATCHER_KEY` (the pause-only key printed by `npm run deploy:testnet`).
+   - Optional: `QORVEX_NETWORKS=testnet,mainnet` (mainnet is read-only and rate-limited on public RPC; set `FASTNEAR_API_KEY`), `NEARAI_API_KEY` with `QORVEX_AI_MODE=live`, `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`.
+5. Deploy. The health check is `/api/health`. Rate limits use the client address from `X-Forwarded-For` on Railway (`QORVEX_TRUST_PROXY=0` turns that off).
+
+The local sandbox demo (`npm run demo`) does not run on Railway: it needs the nearcore sandbox binary. The hosted app watches testnet (and optionally mainnet).
 
 ## AI and recorded responses (A1, A2, A9)
 
@@ -161,7 +183,7 @@ Every setting is in [.env.example](.env.example). Secrets are read from the envi
 ## Known limitations
 
 - **Pause latency:** the watcher takes 4 blocks on the sandbox, against the 3-block target (see above). Testnet has not been measured yet.
-- **One process:** the store is JSON files and the relayer SDK keeps spend history per process. Run one watcher and one SDK instance per relayer, or move both to a shared database.
+- **One process:** the store is one SQLite file and the working set is held in memory, so run one Qorvex server process. Relayer checks are shared across any number of relayer instances (they are decided on the server); the older in-process `QorvexRelayerGuard` in `backend/src/relayer/sdk.ts` still keeps history per process and is kept for the local demo.
 - **Sampled backtests:** solvency backtests sample block heights, not every block. Outflow backtests replay only recent blocks.
 - **Wallet signing:** the console shows the guardian-authorisation transaction and a near-cli-rs command. In-browser wallet signing (near-connect) is not wired up; the sandbox demo signs with the demo owner key.
 - **Free neardata.xyz tier:** it rate-limits full mainnet block documents (observed HTTP 429). The stream backs off, and a 30-second heartbeat keeps read-only pages evaluated. For per-block mainnet streaming, set `FASTNEAR_API_KEY`, switch to `QORVEX_<NET>_STREAM=rpc` (block + chunk following over the RPC list), or run a NEAR Indexer node.

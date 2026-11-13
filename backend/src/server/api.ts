@@ -23,6 +23,15 @@ import type { Alerter } from "../alerts/alerts.ts";
 import { firewallRole, verifyFirewallPolicy } from "../firewall/policy.ts";
 import { humanizePolicy } from "../firewall/humanize.ts";
 import { cachedTokenMeta } from "../near/tokens.ts";
+import { HttpError, MAX_SSE_CLIENTS, SECURITY_HEADERS, body, num, obj, send, str } from "./http.ts";
+import { allowed, actorOf, bearer, resolvePrincipal, type Principal } from "./principal.ts";
+import type { Action } from "../auth/access.ts";
+import type { QorvexAuth } from "../auth/auth.ts";
+import { consumeStepUp, NearAuthError, type StepUpProof } from "../auth/near-plugin.ts";
+import type { AuthorityClaim } from "@qorvex/shared";
+import { DEFAULT_WORKSPACE, type Tenancy } from "../tenancy/tenancy.ts";
+import { saasRoutes } from "./saas-routes.ts";
+import { toNodeHandler } from "better-auth/node";
 
 export interface ApiDeps {
   store: Store;
@@ -30,6 +39,13 @@ export interface ApiDeps {
   ai: NearAiClient;
   alerter: Alerter;
   adminToken: string;
+  /** Better Auth (sessions, workspaces, API keys, NEAR sign-in). Absent only in narrow unit tests. */
+  auth?: QorvexAuth;
+  tenancy: Tenancy;
+  /** QORVEX_SINGLE_TENANT: the admin token acts as Owner of the "default" workspace (self-hosting, demo, tests). */
+  singleTenant: boolean;
+  /** Re-read the chain and update this workspace's claim on the contract (see tenancy/claims.ts). */
+  reverifyClaim?: (workspaceId: string, network: NetworkId, contractId: string) => Promise<AuthorityClaim | undefined>;
   webDir: string;
   /** Sandbox demo hooks (only present when the local demo world is loaded). */
   demo?: {
@@ -46,65 +62,6 @@ export interface ApiDeps {
   backtestSamples: (network: NetworkId) => number;
   log: (s: string) => void;
 }
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public extra?: unknown,
-  ) {
-    super(message);
-  }
-}
-
-const MAX_BODY = 2_000_000;
-/** Cap on concurrent server-sent-event subscribers (each holds a socket open). */
-const MAX_SSE_CLIENTS = 500;
-
-async function body(req: http.IncomingMessage): Promise<any> {
-  const chunks: Buffer[] = [];
-  let n = 0;
-  for await (const c of req) {
-    n += (c as Buffer).length;
-    if (n > MAX_BODY) throw new HttpError(413, "body too large");
-    chunks.push(c as Buffer);
-  }
-  if (!n) return {};
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch {
-    throw new HttpError(400, "invalid JSON body");
-  }
-}
-
-/** Headers on every response: no MIME sniffing, no referrer leaks, no framing (clickjacking). */
-const SECURITY_HEADERS = { "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-frame-options": "DENY" };
-
-function send(res: http.ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { ...SECURITY_HEADERS, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-  res.end(JSON.stringify(data, bigintReplacer));
-}
-
-function bearer(req: http.IncomingMessage): string {
-  const h = req.headers.authorization ?? "";
-  return h.startsWith("Bearer ") ? h.slice(7) : "";
-}
-
-/** A request body object (not an array or a primitive). */
-function obj(x: unknown, what: string): Record<string, unknown> {
-  if (!x || typeof x !== "object" || Array.isArray(x)) throw new HttpError(400, `${what} must be a JSON object`);
-  return x as Record<string, unknown>;
-}
-
-/** A finite number from the body, clamped to [min, max]; `fallback` when absent. */
-function num(x: unknown, what: string, fallback: number, min: number, max: number): number {
-  if (x === undefined || x === null) return fallback;
-  const n = Number(x);
-  if (!Number.isFinite(n)) throw new HttpError(400, `${what} must be a number`);
-  return Math.min(max, Math.max(min, n));
-}
-
-const str = (x: unknown, max: number) => (typeof x === "string" ? x.slice(0, max) : undefined);
 
 /** Keep a relayer-submitted decision only if it has the logged shape; bound its strings. */
 function sanitizeDecision(x: unknown): Decision | null {
@@ -133,35 +90,79 @@ function safeEqual(a: string, b: string): boolean {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
+/** Per-request context for authorised routes: who is calling, and the workspace they act in. */
+export interface Ctx {
+  p: Principal;
+  ws: string;
+}
+
+/** Route access: "public" (no auth), "relayer" (the relayer's own token, checked in the handler), "user" (any signed-in user), or a matrix action. */
+export type Access = "public" | "relayer" | "user" | Action;
+export type Handler = (req: http.IncomingMessage, res: http.ServerResponse, m: RegExpMatchArray, url: URL, ctx: Ctx) => Promise<void>;
+export type Route = [string, RegExp, Access, Handler];
+
+/** A record's workspace (records from before multi-tenancy belong to "default"). */
+export const wsOf = (x: { workspaceId?: string }) => x.workspaceId ?? DEFAULT_WORKSPACE;
+
 const MIME: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".map": "application/json; charset=utf-8", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 
 export function createServer(d: ApiDeps): http.Server {
-  // Live events. Operators (authenticated) get every event. Anyone else gets only events
+  // Live events. A signed-in principal gets every event of its own workspace. Anyone gets events
   // about published protocols and network-wide block events, never relayer or unpublished data.
-  const sse = new Map<http.ServerResponse, { operator: boolean }>();
+  const sse = new Map<http.ServerResponse, { ws: string | null }>();
   /** Source uploaded for drafting, kept in memory only (re-upload after a restart). */
   const uploads = new Map<string, SourceFile[]>();
   d.store.on((e: StoreEvent) => {
-    const pub = !!(e.protocolId && d.store.protocol(e.protocolId)?.published);
+    const prot = e.protocolId ? d.store.protocol(e.protocolId) : undefined;
+    const pub = !!prot?.published;
     const anonymousOk = pub || (!e.protocolId && !e.relayerId);
+    const owner = prot ? wsOf(prot) : e.relayerId ? wsOf(d.store.relayer(e.relayerId) ?? {}) : null;
     const payload = `data: ${JSON.stringify({ ...e, public: pub }, bigintReplacer)}\n\n`;
-    for (const [r, c] of sse) if (c.operator || anonymousOk) r.write(payload);
+    for (const [r, c] of sse) if (anonymousOk || (c.ws && c.ws === owner)) r.write(payload);
   });
 
-  const isAdmin = (token: string) => !!d.adminToken && safeEqual(token, d.adminToken);
-  const requireAdmin = (req: http.IncomingMessage) => {
-    if (!isAdmin(bearer(req))) throw new HttpError(401, "operator token required (Authorization: Bearer <QORVEX_ADMIN_TOKEN>)");
-  };
+  const principalDeps = { auth: d.auth, tenancy: d.tenancy, singleTenant: d.singleTenant, adminToken: d.adminToken };
   const net = (id: NetworkId) => {
     const n = d.networks.get(id);
     if (!n) throw new HttpError(400, `network ${id} is not enabled on this server (QORVEX_NETWORKS)`);
     return n;
   };
-  const getProtocol = (id: string) => {
+  /** A protocol of the caller's workspace; another workspace's id answers 404, exactly like an unknown one. */
+  const getProtocol = (id: string, ctx: Ctx) => {
     const p = d.store.protocol(id);
-    if (!p) throw new HttpError(404, "protocol not found");
+    if (!p || wsOf(p) !== ctx.ws) throw new HttpError(404, "protocol not found");
     return p;
   };
+  const getRelayer = (id: string, ctx: Ctx) => {
+    const r = d.store.relayer(id);
+    if (!r || wsOf(r) !== ctx.ws) throw new HttpError(404, "relayer not found");
+    return r;
+  };
+  /**
+   * Step-up guard: sessions must attach a fresh NEP-413 signature bound to this
+   * action, target and parameters (header x-qorvex-step-up, base64 JSON). The
+   * single-tenant admin token and API keys do not sign; the audit log records how.
+   */
+  const stepUp = async (req: http.IncomingMessage, ctx: Ctx, action: Action, target: string, params: unknown, allowAccount?: (network: NetworkId, accountId: string) => boolean) => {
+    if (ctx.p.kind !== "session") return undefined;
+    if (!d.auth) throw new HttpError(500, "auth is not configured");
+    const h = req.headers["x-qorvex-step-up"];
+    if (typeof h !== "string" || !h) throw new HttpError(428, "this action needs a fresh wallet signature", { stepUp: { action, target, params } });
+    let proof: StepUpProof;
+    try {
+      proof = JSON.parse(Buffer.from(h, "base64").toString("utf8"));
+    } catch {
+      throw new HttpError(400, "x-qorvex-step-up must be base64 JSON {nonce, accountId, publicKey, signature}");
+    }
+    try {
+      return await consumeStepUp(d.auth.nearOptions, ctx.p.userId, { action, target, params }, proof, allowAccount);
+    } catch (e) {
+      if (e instanceof NearAuthError) throw new HttpError(e.code === "RPC" ? 503 : 401, e.message, { code: `NEAR_${e.code}` });
+      throw e;
+    }
+  };
+  const audit = (ctx: Ctx, action: string, target?: string, detail?: unknown, signedMessage?: unknown) =>
+    d.tenancy.audit({ workspaceId: ctx.ws, ...actorOf(ctx.p), action, target, detail, signedMessage });
   const getRule = (p: Protocol, rid: string) => {
     const r = d.store.rule(p.id, rid);
     if (!r) throw new HttpError(404, "rule not found");
@@ -182,24 +183,26 @@ export function createServer(d: ApiDeps): http.Server {
     return b;
   };
 
-  const routes: [string, RegExp, (req: http.IncomingMessage, res: http.ServerResponse, m: RegExpMatchArray, url: URL) => Promise<void>][] = [
+  const routes: Route[] = [
     // ------------------------------------------------------------ public
-    ["GET", /^\/api\/health$/, async (_q, res) => send(res, 200, { ok: true, networks: [...d.networks.keys()], ai: { mode: d.ai.cfg.mode, draftModel: d.ai.cfg.draftModel, explainModel: d.ai.cfg.explainModel, live: d.ai.canCallLive }, alerts: d.alerter.configured, demo: !!d.demo } satisfies Health)],
-    ["GET", /^\/api\/public\/protocols$/, async (_q, res) => send(res, 200, d.store.protocols().filter((p) => p.published).map((p) => ({ id: p.id, name: p.name, network: p.network, contractId: p.contractId, unofficial: !!p.unofficial })))],
-    ["GET", /^\/api\/status\/([\w-]+)$/, async (_q, res, m) => send(res, 200, await statusView(d, getPublished(d, m[1])))],
-    ["GET", /^\/api\/reads\/([\w-]+)$/, async (_q, res, m) => {
+    ["GET", /^\/api\/health$/, "public", async (_q, res) => send(res, 200, { ok: true, networks: [...d.networks.keys()], ai: { mode: d.ai.cfg.mode, draftModel: d.ai.cfg.draftModel, explainModel: d.ai.cfg.explainModel, live: d.ai.canCallLive }, alerts: d.alerter.configured, demo: !!d.demo } satisfies Health)],
+    ["GET", /^\/api\/public\/protocols$/, "public", async (_q, res) => send(res, 200, d.store.protocols().filter((p) => p.published).map((p) => ({ id: p.id, name: p.name, network: p.network, contractId: p.contractId, unofficial: !!p.unofficial })))],
+    ["GET", /^\/api\/status\/([\w-]+)$/, "public", async (_q, res, m) => send(res, 200, await statusView(d, getPublished(d, m[1])))],
+    ["GET", /^\/api\/reads\/([\w-]+)$/, "public", async (_q, res, m) => {
       const r = d.store.read(m[1]);
       if (!r || !d.store.protocol(r.protocolId)?.published) throw new HttpError(404, "read not found");
       send(res, 200, r);
     }],
-    ["GET", /^\/api\/events$/, async (req, res, _m, url) => {
-      // EventSource cannot send headers, so the operator token may come as ?token=.
+    ["GET", /^\/api\/events$/, "public", async (req, res, _m, url) => {
+      // EventSource cannot send headers, so a token may come as ?token=; browsers send the session cookie.
       const token = bearer(req) || url.searchParams.get("token") || "";
-      if (token && !isAdmin(token)) throw new HttpError(401, "operator token rejected");
+      const p = await resolvePrincipal(principalDeps, req, token || undefined);
+      if (token && p.kind === "anonymous") throw new HttpError(401, "token rejected");
       if (sse.size >= MAX_SSE_CLIENTS) throw new HttpError(503, "too many live-event subscribers; retry later");
       res.writeHead(200, { ...SECURITY_HEADERS, "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
       res.write(": ok\n\n");
-      sse.set(res, { operator: !!token });
+      const ws = p.kind === "anonymous" ? null : p.kind === "session" ? p.workspaceId : p.workspaceId;
+      sse.set(res, { ws: ws && allowed(p, "dashboard.read") ? ws : null });
       const ping = setInterval(() => res.write(": ping\n\n"), 15_000);
       req.on("close", () => {
         clearInterval(ping);
@@ -208,12 +211,10 @@ export function createServer(d: ApiDeps): http.Server {
     }],
 
     // --------------------------------------------------------- operator
-    ["GET", /^\/api\/protocols$/, async (q, res) => {
-      requireAdmin(q);
-      send(res, 200, d.store.protocols());
+    ["GET", /^\/api\/protocols$/, "dashboard.read", async (_q, res, _m, _url, ctx) => {
+      send(res, 200, d.store.protocols().filter((p) => wsOf(p) === ctx.ws));
     }],
-    ["POST", /^\/api\/protocols$/, async (q, res) => {
-      requireAdmin(q);
+    ["POST", /^\/api\/protocols$/, "contract.watch", async (q, res, _m, _url, ctx) => {
       const b = obj(await body(q), "body");
       if (typeof b.network !== "string") throw new HttpError(400, "network is required");
       const network = b.network as NetworkId;
@@ -239,9 +240,12 @@ export function createServer(d: ApiDeps): http.Server {
       } catch {
         daoPolicy = undefined;
       }
-      const existing = d.store.protocols().find((p) => p.network === network && p.contractId === b.contractId);
+      // Each workspace keeps its own private watch of a contract; another workspace's watch is never reused.
+      const existing = d.store.protocols().find((p) => p.network === network && p.contractId === b.contractId && wsOf(p) === ctx.ws);
+      if (b.unofficial === true && ctx.p.kind !== "admin") throw new HttpError(403, "unofficial public pages are created by the Qorvex operator only");
       const p: Protocol = existing ?? {
         id: newId("prt"),
+        ...(ctx.ws === DEFAULT_WORKSPACE ? {} : { workspaceId: ctx.ws }),
         name: (typeof b.name === "string" && b.name.trim().slice(0, 80)) || b.contractId,
         network,
         contractId: b.contractId,
@@ -259,11 +263,11 @@ export function createServer(d: ApiDeps): http.Server {
       p.kind = Array.isArray(daoPolicy?.roles) ? "dao" : "contract";
       if (meta?.link) p.source = { kind: "nep330", link: meta.link, files: [], fetchedAt: new Date().toISOString() };
       d.store.upsertProtocol(p);
+      if (!existing) audit(ctx, "contract.watch", `${network}:${b.contractId}`, { protocolId: p.id });
       send(res, existing ? 200 : 201, { protocol: p, nep330: meta ?? null, needsUpload: !meta?.link && p.kind !== "dao", dao: p.kind === "dao" ? { roles: daoPolicy.roles.map((r: any) => r.name) } : null });
     }],
-    ["GET", /^\/api\/protocols\/([\w-]+)$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["GET", /^\/api\/protocols\/([\w-]+)$/, "dashboard.read", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const n = d.networks.get(p.network);
       const rules = await Promise.all(
         d.store.rules(p.id).map(async (r) => ({
@@ -276,9 +280,8 @@ export function createServer(d: ApiDeps): http.Server {
       );
       send(res, 200, { protocol: p, rules, drafts: d.store.drafts(p.id), breaches: d.store.breaches(p.id).slice(-20).reverse() } satisfies ProtocolDetail);
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/source$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/source$/, "rule.draft", async (q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const b = obj(await body(q), "body");
       const files: SourceFile[] = Array.isArray(b.files) ? b.files.filter((f: any) => typeof f?.path === "string" && f.path.length <= 300 && typeof f?.content === "string").slice(0, 50) : [];
       if (!files.length) throw new HttpError(400, "files: [{path, content}] required");
@@ -287,9 +290,8 @@ export function createServer(d: ApiDeps): http.Server {
       d.store.upsertProtocol(p);
       send(res, 200, { ok: true, files: p.source.files });
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/draft$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/draft$/, "rule.draft", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const n = net(p.network);
       const inputs = await collectInputs(n.rpc, p.network, p.contractId, { upload: uploads.get(p.id), neardataUrl: n.neardataUrl, recentBlockCount: p.network === "sandbox" ? 200 : 60 });
       const methods = new Set(inputs.methods.map((x) => x.name));
@@ -302,10 +304,9 @@ export function createServer(d: ApiDeps): http.Server {
         throw e;
       }
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/rules$/, async (q, res, m) => {
+    ["POST", /^\/api\/protocols\/([\w-]+)\/rules$/, "rule.draft", async (q, res, m, _url, ctx) => {
       // A human writes a rule by hand. It goes through the same validator and backtest as AI drafts.
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+      const p = getProtocol(m[1], ctx);
       const b = obj(await body(q), "body");
       const n = net(p.network);
       const v = await validateDraft(b.rule, { rpc: n.rpc, contractId: p.contractId, methods: new Set(), backtest: (r) => runBacktest(p, r) });
@@ -315,9 +316,8 @@ export function createServer(d: ApiDeps): http.Server {
       d.store.putRule(p.id, rule);
       send(res, 201, { rule, backtest: v.backtest, live: v.live });
     }],
-    ["PATCH", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["PATCH", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)$/, "rule.draft", async (q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const rule = getRule(p, m[2]);
       const b = obj(await body(q), "body");
       const { status: _s, origin: _o, response: _r, approvedBy: _ab, approvedAt: _at, ...current } = rule;
@@ -333,9 +333,8 @@ export function createServer(d: ApiDeps): http.Server {
       d.store.putRule(p.id, next);
       send(res, 200, { rule: next, backtest: v.backtest });
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)\/(approve|reject)$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)\/(approve|reject)$/, "rule.approve", async (q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const rule = getRule(p, m[2]);
       const b = obj(await body(q), "body");
       if (m[3] === "reject") {
@@ -349,27 +348,28 @@ export function createServer(d: ApiDeps): http.Server {
       const bt = d.store.backtest(p.id, rule.id);
       if (!bt) throw new HttpError(409, "run the backtest before approving");
       if (response === "pause" && bt.fires > 0) throw new HttpError(409, `this rule fired ${bt.fires} times in its backtest; it can only be approved as alert-only`);
-      const approved: Rule = { ...rule, status: "approved", response, approvedBy: typeof b.approvedBy === "string" ? b.approvedBy.slice(0, 80) : "operator", approvedAt: new Date().toISOString() };
+      // Approving a rule that can pause or vote is a step-up action for signed-in users.
+      const signed = response === "alert" ? undefined : await stepUp(q, ctx, "rule.approve", `${p.network}:${p.contractId}`, { protocolId: p.id, ruleId: rule.id, response });
+      const by = ctx.p.kind === "session" ? ctx.p.name : typeof b.approvedBy === "string" ? b.approvedBy.slice(0, 80) : "operator";
+      const approved: Rule = { ...rule, status: "approved", response, approvedBy: by, approvedAt: new Date().toISOString() };
       d.store.putRule(p.id, approved);
+      audit(ctx, "rule.approve", `${p.network}:${p.contractId}`, { ruleId: rule.id, response }, signed);
       send(res, 200, { rule: approved });
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)\/backtest$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)\/backtest$/, "rule.draft", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       send(res, 200, await runBacktest(p, getRule(p, m[2])));
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)\/evaluate$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/rules\/([\w.:-]+)\/evaluate$/, "rule.draft", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const rule = getRule(p, m[2]);
       if (rule.type !== "solvency") throw new HttpError(400, "only solvency rules have a live value");
       const ev = await evaluateSolvency(net(p.network).rpc, rule, p.contractId, { finality: "final" });
       d.store.recordEvaluation(p.id, ev);
       send(res, 200, ev);
     }],
-    ["GET", /^\/api\/protocols\/([\w-]+)\/guardian$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["GET", /^\/api\/protocols\/([\w-]+)\/guardian$/, "dashboard.read", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const n = net(p.network);
       if (!n.guardianId) throw new HttpError(409, `no guardian configured for ${p.network} (QORVEX_${p.network.toUpperCase()}_GUARDIAN)`);
       const args = { guardian_id: n.guardianId };
@@ -382,15 +382,13 @@ export function createServer(d: ApiDeps): http.Server {
         demoSigning: !!d.demo && p.network === "sandbox",
       });
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/guardian\/sign-demo$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/guardian\/sign-demo$/, "demo.run", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       if (!d.demo || p.network !== "sandbox") throw new HttpError(403, "demo signing exists only for the local sandbox demo");
       send(res, 200, { txHash: await d.demo.signSetGuardian(p) });
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/guardian\/verify$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/guardian\/verify$/, "contract.watch", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const n = net(p.network);
       if (!n.guardianId) throw new HttpError(409, "no guardian configured");
       const result: Record<string, unknown> = { guardianId: n.guardianId };
@@ -425,9 +423,8 @@ export function createServer(d: ApiDeps): http.Server {
       d.store.upsertProtocol(p);
       send(res, 200, { ok, ...result });
     }],
-    ["GET", /^\/api\/protocols\/([\w-]+)\/firewall$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["GET", /^\/api\/protocols\/([\w-]+)\/firewall$/, "dashboard.read", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       if (p.kind !== "dao") throw new HttpError(409, "the proposal firewall is for Sputnik DAOs");
       const n = net(p.network);
       if (!n.firewallAccount) throw new HttpError(409, `no firewall account configured for ${p.network} (QORVEX_${p.network.toUpperCase()}_FIREWALL_ACCOUNT)`);
@@ -444,16 +441,14 @@ export function createServer(d: ApiDeps): http.Server {
         demoSigning: !!d.demo && p.network === "sandbox",
       });
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/firewall\/sign-demo$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/firewall\/sign-demo$/, "demo.run", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const n = net(p.network);
       if (!d.demo || p.network !== "sandbox" || !n.firewallAccount) throw new HttpError(403, "demo signing exists only for the local sandbox demo");
       send(res, 200, { txHash: await d.demo.signFirewallRole(p, firewallRole(n.firewallAccount)) });
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/firewall\/verify$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/firewall\/verify$/, "contract.watch", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const n = net(p.network);
       if (!n.firewallAccount) throw new HttpError(409, "no firewall account configured");
       const pol = await n.rpc.view<any>(p.contractId, "get_policy", {});
@@ -479,13 +474,11 @@ export function createServer(d: ApiDeps): http.Server {
       send(res, 200, { ...result, ok, problems: v.problems });
     }],
     // Read-only operator views used by the console (same data as the public page, for unpublished protocols too).
-    ["GET", /^\/api\/protocols\/([\w-]+)\/status$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["GET", /^\/api\/protocols\/([\w-]+)\/status$/, "dashboard.read", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       send(res, 200, await statusView(d, p));
     }],
-    ["GET", /^\/api\/networks$/, async (q, res) => {
-      requireAdmin(q);
+    ["GET", /^\/api\/networks$/, "dashboard.read", async (_q, res, _m, _url, _ctx) => {
       send(res, 200, [...d.networks.values()].map((n): NetworkInfo => ({
         id: n.id,
         rpcUrls: n.rpcUrls,
@@ -498,43 +491,44 @@ export function createServer(d: ApiDeps): http.Server {
         progress: d.store.watcherProgress(n.id) ?? null,
       })));
     }],
-    ["GET", /^\/api\/protocols\/([\w-]+)\/proposals$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["GET", /^\/api\/protocols\/([\w-]+)\/proposals$/, "dashboard.read", async (_q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       send(res, 200, d.store.proposals(p.id).slice(-100).reverse());
     }],
-    ["POST", /^\/api\/protocols\/([\w-]+)\/publish$/, async (q, res, m) => {
-      requireAdmin(q);
-      const p = getProtocol(m[1]);
+    ["POST", /^\/api\/protocols\/([\w-]+)\/publish$/, "status.publish", async (q, res, m, _url, ctx) => {
+      const p = getProtocol(m[1], ctx);
       const b = obj(await body(q), "body");
-      p.published = b.published !== false;
+      const publish = b.published !== false;
+      if (publish && ctx.p.kind !== "admin") {
+        // An official public page needs verified on-chain authority, re-checked now.
+        const claim = await d.reverifyClaim?.(ctx.ws, p.network, p.contractId);
+        if (!claim || claim.status !== "verified") throw new HttpError(403, "publishing a status page needs verified on-chain authority over this contract: claim it first");
+        if (!d.tenancy.claimCanonical(p.network, p.contractId, ctx.ws)) throw new HttpError(409, "another workspace holds the verified public page for this contract");
+      }
+      p.published = publish;
       d.store.upsertProtocol(p);
+      audit(ctx, publish ? "status.publish" : "status.unpublish", `${p.network}:${p.contractId}`);
       send(res, 200, { ok: true, url: `/status/${p.id}` });
     }],
 
     // --------------------------------------------------------- relayers
-    ["GET", /^\/api\/relayers$/, async (q, res) => {
-      requireAdmin(q);
-      send(res, 200, d.store.relayers().map(relayerView));
+    ["GET", /^\/api\/relayers$/, "dashboard.read", async (_q, res, _m, _url, ctx) => {
+      send(res, 200, d.store.relayers().filter((r) => wsOf(r) === ctx.ws).map(relayerView));
     }],
-    ["POST", /^\/api\/relayers$/, async (q, res) => {
-      requireAdmin(q);
+    ["POST", /^\/api\/relayers$/, "relayer.manage", async (q, res, _m, _url, ctx) => {
       const b = obj(await body(q), "body");
       const token = `qrx_${crypto.randomBytes(24).toString("hex")}`;
-      const r = { id: newId("rly"), name: String(b.name ?? "relayer").slice(0, 80), tokenHash: hashToken(token), budgets: [], failMode: b.failMode === "open" ? ("open" as const) : ("closed" as const), updatedAt: new Date().toISOString() };
+      const r = { id: newId("rly"), ...(ctx.ws === DEFAULT_WORKSPACE ? {} : { workspaceId: ctx.ws }), name: String(b.name ?? "relayer").slice(0, 80), tokenHash: hashToken(token), budgets: [], failMode: b.failMode === "open" ? ("open" as const) : ("closed" as const), updatedAt: new Date().toISOString() };
       d.store.putRelayer(r);
+      audit(ctx, "relayer.create", r.id, { name: r.name });
       send(res, 201, { relayer: relayerView(r), token, note: "The token is shown once. Put it in the relayer's environment (QORVEX_RELAYER_TOKEN)." });
     }],
-    ["GET", /^\/api\/relayers\/([\w-]+)\/admin$/, async (q, res, m) => {
-      requireAdmin(q);
-      const r = d.store.relayer(m[1]);
-      if (!r) throw new HttpError(404, "relayer not found");
+    ["GET", /^\/api\/relayers\/([\w-]+)\/admin$/, "dashboard.read", async (_q, res, m, _url, ctx) => {
+      const r = getRelayer(m[1], ctx);
       send(res, 200, { relayer: relayerView(r), decisions: d.store.decisions(r.id).slice(-300).reverse() });
     }],
-    ["PUT", /^\/api\/relayers\/([\w-]+)\/budgets$/, async (q, res, m) => {
-      requireAdmin(q);
-      const r = d.store.relayer(m[1]);
-      if (!r) throw new HttpError(404, "relayer not found");
+    ["PUT", /^\/api\/relayers\/([\w-]+)\/budgets$/, "relayer.manage", async (q, res, m, _url, ctx) => {
+      const r = getRelayer(m[1], ctx);
       const b = obj(await body(q), "body");
       if (!Array.isArray(b.budgets) || b.budgets.length > 100) throw new HttpError(400, "budgets must be a list (at most 100)");
       const errors = b.budgets.flatMap((x: unknown, i: number) => validateBudget(x).map((e) => `budgets[${i}]: ${e}`));
@@ -554,11 +548,11 @@ export function createServer(d: ApiDeps): http.Server {
       send(res, 200, { relayer: relayerView(r) });
     }],
     // SDK endpoints: authenticated with the relayer's own token
-    ["GET", /^\/api\/relayers\/([\w-]+)\/budgets$/, async (q, res, m) => {
+    ["GET", /^\/api\/relayers\/([\w-]+)\/budgets$/, "relayer", async (q, res, m) => {
       const r = relayerAuth(d, q, m[1]);
       send(res, 200, { budgets: r.budgets, failMode: r.failMode, proposalPolicy: r.proposalPolicy, updatedAt: r.updatedAt });
     }],
-    ["POST", /^\/api\/relayers\/([\w-]+)\/decisions$/, async (q, res, m) => {
+    ["POST", /^\/api\/relayers\/([\w-]+)\/decisions$/, "relayer", async (q, res, m) => {
       const r = relayerAuth(d, q, m[1]);
       const b = obj(await body(q), "body");
       const ds = (Array.isArray(b.decisions) ? b.decisions.slice(0, 500) : []).map(sanitizeDecision).filter((x): x is Decision => x !== null);
@@ -568,25 +562,21 @@ export function createServer(d: ApiDeps): http.Server {
     }],
 
     // ------------------------------------------------------------- demo
-    ["GET", /^\/api\/demo$/, async (q, res) => {
-      requireAdmin(q);
+    ["GET", /^\/api\/demo$/, "demo.run", async (_q, res, _m, _url, _ctx) => {
       if (!d.demo) throw new HttpError(404, "no demo world loaded");
       send(res, 200, d.demo.info());
     }],
-    ["POST", /^\/api\/demo\/ghost$/, async (q, res) => {
-      requireAdmin(q);
+    ["POST", /^\/api\/demo\/ghost$/, "demo.run", async (q, res, _m, _url, _ctx) => {
       if (!d.demo) throw new HttpError(404, "no demo world loaded");
       const b = obj(await body(q), "body");
       if (typeof b.target !== "string") throw new HttpError(400, "target is required");
       send(res, 200, { txHash: await d.demo.ghost(b.target, num(b.amount, "amount", 40_000, 1, 1_000_000)) });
     }],
-    ["POST", /^\/api\/demo\/action\/([a-z-]+)$/, async (q, res, m) => {
-      requireAdmin(q);
+    ["POST", /^\/api\/demo\/action\/([a-z-]+)$/, "demo.run", async (q, res, m, _url, _ctx) => {
       if (!d.demo) throw new HttpError(404, "no demo world loaded");
       send(res, 200, await d.demo.action(m[1], obj(await body(q), "body")));
     }],
-    ["POST", /^\/api\/demo\/trezu$/, async (q, res) => {
-      requireAdmin(q);
+    ["POST", /^\/api\/demo\/trezu$/, "demo.run", async (q, res, _m, _url, _ctx) => {
       if (!d.demo) throw new HttpError(404, "no demo world loaded");
       const b = obj(await body(q), "body");
       send(res, 200, await d.demo.trezu(b.mode === "unguarded" ? "unguarded" : "guarded", Math.round(num(b.receivers, "receivers", 100, 1, 200))));
@@ -594,12 +584,42 @@ export function createServer(d: ApiDeps): http.Server {
   ];
 
 
-  return http.createServer(async (req, res) => {
+  routes.push(...saasRoutes({ d, net, getProtocol, getRelayer, audit, stepUp, runBacktest }));
+  const authHandler = d.auth ? toNodeHandler(d.auth.auth) : undefined;
+  const origins = new Set(d.auth?.trustedOrigins ?? []);
+  /** Browsers send Origin on every cross-origin and same-origin POST; refuse ones that are not ours. */
+  const originOk = (req: http.IncomingMessage) => {
+    const o = req.headers.origin;
+    if (typeof o === "string") return origins.has(o);
+    return req.headers["sec-fetch-site"] !== "cross-site";
+  };
+
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
     try {
-      for (const [method, re, h] of routes) {
+      if (url.pathname.startsWith("/api/auth/")) {
+        if (!authHandler) throw new HttpError(404, "sign-in is not configured on this server");
+        // Better Auth skips its own origin check on requests without a cookie (sign-in, sign-up).
+        if (req.method !== "GET" && !originOk(req)) throw new HttpError(403, "cross-site request refused");
+        return await authHandler(req, res);
+      }
+      for (const [method, re, access, h] of routes) {
         const m = url.pathname.match(re);
-        if (m && req.method === method) return await h(req, res, m, url);
+        if (!m || req.method !== method) continue;
+        let ctx: Ctx = { p: { kind: "anonymous" }, ws: "" };
+        if (access !== "public" && access !== "relayer") {
+          const p = await resolvePrincipal(principalDeps, req);
+          if (p.kind === "anonymous") throw new HttpError(401, d.singleTenant ? "sign in, or send Authorization: Bearer <QORVEX_ADMIN_TOKEN>" : "sign in required");
+          if (p.kind === "session" && req.method !== "GET" && !originOk(req)) throw new HttpError(403, "cross-site request refused");
+          if (access === "user") {
+            ctx = { p, ws: p.kind === "session" ? (p.workspaceId ?? "") : p.workspaceId };
+          } else {
+            if (p.kind === "session" && !p.workspaceId) throw new HttpError(409, "choose or create a workspace first");
+            if (!allowed(p, access)) throw new HttpError(403, `your role in this workspace cannot do this (${access})`);
+            ctx = { p, ws: (p as { workspaceId: string }).workspaceId };
+          }
+        }
+        return await h(req, res, m, url, ctx);
       }
       if (req.method === "GET" && !url.pathname.startsWith("/api/")) return serveStatic(d.webDir, url.pathname, res);
       throw new HttpError(404, "not found");
@@ -612,7 +632,13 @@ export function createServer(d: ApiDeps): http.Server {
       else res.end();
     }
   });
+  // The route table, for the cross-workspace test matrix (test/unit/api.test.ts).
+  ROUTES.set(server, routes);
+  return server;
 }
+
+const ROUTES = new WeakMap<http.Server, Route[]>();
+export const routeTable = (s: http.Server): Route[] => ROUTES.get(s) ?? [];
 
 function getPublished(d: ApiDeps, id: string): Protocol {
   const p = d.store.protocol(id);
@@ -620,7 +646,7 @@ function getPublished(d: ApiDeps, id: string): Protocol {
   return p;
 }
 
-function relayerAuth(d: ApiDeps, req: http.IncomingMessage, id: string) {
+export function relayerAuth(d: ApiDeps, req: http.IncomingMessage, id: string) {
   const r = d.store.relayer(id);
   const t = bearer(req);
   if (!r || !t || !safeEqual(hashToken(t), r.tokenHash)) throw new HttpError(401, "relayer token required");
@@ -628,7 +654,7 @@ function relayerAuth(d: ApiDeps, req: http.IncomingMessage, id: string) {
 }
 
 const refusalAlerted = new Map<string, number>();
-async function maybeAlertRefusals(d: ApiDeps, relayerId: string, name: string) {
+export async function maybeAlertRefusals(d: ApiDeps, relayerId: string, name: string) {
   const now = Date.now();
   const recent = d.store.decisions(relayerId).filter((x) => !x.allow && x.at >= now - 60_000);
   const byBen = new Map<string, number>();
@@ -655,7 +681,7 @@ function summariseInputs(i: Awaited<ReturnType<typeof collectInputs>>) {
   };
 }
 
-function relayerView({ tokenHash: _hash, ...r }: { tokenHash: string } & RelayerView): RelayerView {
+export function relayerView({ tokenHash: _hash, ...r }: { tokenHash: string } & RelayerView): RelayerView {
   return r;
 }
 
@@ -765,7 +791,8 @@ function serveStatic(dir: string, pathname: string, res: http.ServerResponse) {
     res.writeHead(200, { ...SECURITY_HEADERS, "content-type": MIME[path.extname(full)] ?? "application/octet-stream", "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache" });
     return fs.createReadStream(full).pipe(res);
   }
-  if (path.extname(rel)) {
+  // A missing asset is a 404; other dotted paths are client routes (contract ids such as /c/mainnet/intents.near).
+  if ((rel.startsWith("assets/") && path.extname(rel)) || path.extname(rel) in MIME) {
     res.writeHead(404, { "content-type": "text/plain" });
     return res.end("not found");
   }

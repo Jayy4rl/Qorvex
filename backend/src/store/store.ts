@@ -1,12 +1,22 @@
 /**
- * Small JSON-file store. One process owns the data directory; writes are
- * atomic (write to temp, rename). Good enough for a single watcher instance;
- * the README lists a real database as future work.
+ * Domain store on SQLite (see db/db.ts).
+ *
+ * The working set stays in memory, so the watcher's per-block reads are
+ * synchronous and cheap, and callers may keep mutating the objects they got
+ * from the store (as they did with the JSON-file store this replaces). A
+ * debounced flush writes every entity whose JSON changed since it was last
+ * written, in one transaction, so a crash never leaves a half-written state.
+ *
+ * Every row carries the owning workspace id (when the entity has one) so
+ * queries outside this process (admin tools, exports) can scope by workspace.
+ * A legacy `state.json` / `reads.json` in the store directory is imported once
+ * and renamed to `*.imported`.
  */
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { BacktestResult, Breach, Decision, DraftRun, Evaluation, ProposalEvaluation, Protocol, Read, Relayer, Rule, WatcherProgress } from "@qorvex/shared";
+import { openDb, tx, type Db } from "../db/db.ts";
 
 interface State {
   protocols: Protocol[];
@@ -37,26 +47,97 @@ const EMPTY: State = {
 };
 
 const MAX_READS = 20_000;
+/** Recent evaluations kept per rule for the monitor charts (memory only, refilled as blocks arrive). */
+const HISTORY_POINTS = 240;
+
+/** One evaluation, compacted for charts. */
+export interface HistoryPoint {
+  blockHeight: number;
+  at: string;
+  ok: boolean;
+  owed?: string;
+  held?: string;
+  marginBps?: number | null;
+  total?: string;
+  max?: string;
+}
 const MAX_DECISIONS = 2_000;
 
 export type StoreEvent = { type: string; protocolId?: string; relayerId?: string; data?: unknown };
 
+type StoredRead = Read & { protocolId: string; ruleId: string };
+/** Collections stored one row per array item (keyed by `id`); the rest are records (one row per key). */
+const ARRAY_KINDS = new Set<keyof State>(["protocols", "drafts", "breaches", "relayers"]);
+
 export class Store {
   private state: State;
-  private reads = new Map<string, Read & { protocolId: string; ruleId: string }>();
-  private file: string;
-  private readsFile: string;
-  private readsDirty = false;
+  private reads = new Map<string, StoredRead>();
+  /** Reads added since the last flush (written as new rows). */
+  private newReads: StoredRead[] = [];
+  /** Last JSON written per row ("kind\0key"), to write only what changed. */
+  private written = new Map<string, string>();
   private timer: NodeJS.Timeout | null = null;
   private listeners = new Set<(e: StoreEvent) => void>();
+  private history = new Map<string, HistoryPoint[]>();
+  public readonly db: Db;
 
-  constructor(public readonly dir: string) {
+  /**
+   * @param dir store directory (holds `qorvex.db` unless `db` is given, and any legacy JSON files to import)
+   * @param db  an open database to share (the service passes the one Better Auth also uses)
+   */
+  constructor(
+    public readonly dir: string,
+    db?: Db,
+  ) {
     fs.mkdirSync(dir, { recursive: true });
-    this.file = path.join(dir, "state.json");
-    this.readsFile = path.join(dir, "reads.json");
-    this.state = fs.existsSync(this.file) ? { ...EMPTY, ...JSON.parse(fs.readFileSync(this.file, "utf8")) } : structuredClone(EMPTY);
-    if (fs.existsSync(this.readsFile)) {
-      for (const r of JSON.parse(fs.readFileSync(this.readsFile, "utf8"))) this.reads.set(r.id, r);
+    this.db = db ?? openDb(path.join(dir, "qorvex.db"));
+    this.state = structuredClone(EMPTY);
+    this.load();
+    this.importLegacy();
+  }
+
+  private load(): void {
+    const rows = this.db.prepare("SELECT kind, key, doc FROM store_docs ORDER BY rowid").all() as { kind: keyof State; key: string; doc: string }[];
+    for (const r of rows) {
+      if (!(r.kind in EMPTY)) continue;
+      const v = JSON.parse(r.doc);
+      if (ARRAY_KINDS.has(r.kind)) (this.state[r.kind] as unknown[]).push(v);
+      else (this.state[r.kind] as Record<string, unknown>)[r.key] = v;
+      this.written.set(`${r.kind}\0${r.key}`, r.doc);
+    }
+    for (const r of this.db.prepare("SELECT doc FROM store_reads ORDER BY seq").all() as { doc: string }[]) {
+      const x = JSON.parse(r.doc) as StoredRead;
+      this.reads.set(x.id, x);
+    }
+  }
+
+  /** One-time import of the JSON-file store this replaced. */
+  private importLegacy(): void {
+    const file = path.join(this.dir, "state.json");
+    const readsFile = path.join(this.dir, "reads.json");
+    if (fs.existsSync(file)) {
+      const old = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<State>;
+      for (const k of Object.keys(EMPTY) as (keyof State)[]) {
+        if (old[k] === undefined) continue;
+        if (ARRAY_KINDS.has(k)) {
+          const have = new Set((this.state[k] as { id: string }[]).map((x) => x.id));
+          for (const x of old[k] as { id: string }[]) if (!have.has(x.id)) (this.state[k] as unknown[]).push(x);
+        } else {
+          this.state[k] = { ...(old[k] as object), ...(this.state[k] as object) } as never;
+        }
+      }
+    }
+    if (fs.existsSync(readsFile)) {
+      for (const r of JSON.parse(fs.readFileSync(readsFile, "utf8")) as StoredRead[]) {
+        if (!this.reads.has(r.id)) {
+          this.reads.set(r.id, r);
+          this.newReads.push(r);
+        }
+      }
+    }
+    if (fs.existsSync(file) || fs.existsSync(readsFile)) {
+      this.flush();
+      for (const f of [file, readsFile]) if (fs.existsSync(f)) fs.renameSync(f, `${f}.imported`);
     }
   }
 
@@ -80,14 +161,54 @@ export class Store {
     this.timer = setTimeout(() => this.flush(), 250);
   }
 
+  /** Write every entity whose JSON changed since its last write, and new reads, in one transaction. */
   flush(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    writeAtomic(this.file, JSON.stringify(this.state, bigintReplacer, 1));
-    // The reads file holds up to MAX_READS raw RPC exchanges: rewrite it only when it changed.
-    if (this.readsDirty) {
-      writeAtomic(this.readsFile, JSON.stringify([...this.reads.values()], bigintReplacer));
-      this.readsDirty = false;
+    const now = Date.now();
+    const upsert = this.db.prepare(
+      "INSERT INTO store_docs (kind, key, workspace_id, doc, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (kind, key) DO UPDATE SET workspace_id = excluded.workspace_id, doc = excluded.doc, updated_at = excluded.updated_at",
+    );
+    const del = this.db.prepare("DELETE FROM store_docs WHERE kind = ? AND key = ?");
+    const seen = new Set<string>();
+    tx(this.db, () => {
+      for (const kind of Object.keys(EMPTY) as (keyof State)[]) {
+        const entries: [string, unknown][] = ARRAY_KINDS.has(kind)
+          ? (this.state[kind] as { id: string }[]).map((x) => [x.id, x])
+          : Object.entries(this.state[kind] as Record<string, unknown>);
+        for (const [key, v] of entries) {
+          const id = `${kind}\0${key}`;
+          seen.add(id);
+          const doc = JSON.stringify(v, bigintReplacer);
+          if (this.written.get(id) === doc) continue;
+          const ws = v && typeof v === "object" && typeof (v as { workspaceId?: unknown }).workspaceId === "string" ? (v as { workspaceId: string }).workspaceId : null;
+          upsert.run(kind, key, ws, doc, now);
+          this.written.set(id, doc);
+        }
+      }
+      for (const id of [...this.written.keys()]) {
+        if (seen.has(id)) continue;
+        const [kind, key] = id.split("\0");
+        del.run(kind, key);
+        this.written.delete(id);
+      }
+      if (this.newReads.length) {
+        const ins = this.db.prepare("INSERT OR REPLACE INTO store_reads (id, protocol_id, doc) VALUES (?, ?, ?)");
+        for (const r of this.newReads) if (this.reads.has(r.id)) ins.run(r.id, r.protocolId, JSON.stringify(r, bigintReplacer));
+        this.newReads = [];
+        // Keep the newest MAX_READS rows, matching the in-memory cap.
+        this.db.prepare("DELETE FROM store_reads WHERE seq <= (SELECT seq FROM store_reads ORDER BY seq DESC LIMIT 1 OFFSET ?)").run(MAX_READS);
+      }
+    });
+  }
+
+  /** Flush and close the database (service shutdown). */
+  close(): void {
+    this.flush();
+    try {
+      this.db.close();
+    } catch {
+      /* already closed */
     }
   }
 
@@ -134,10 +255,23 @@ export class Store {
   recordEvaluation(protocolId: string, ev: Evaluation): void {
     const key = `${protocolId}/${ev.ruleId}`;
     this.state.evaluations[key] = ev;
+    if (ev.type !== "proposal") {
+      const h = this.history.get(key) ?? [];
+      const last = h.at(-1);
+      const point: HistoryPoint =
+        ev.type === "solvency" ? { blockHeight: ev.blockHeight, at: ev.at, ok: ev.ok, owed: ev.owed, held: ev.held, marginBps: ev.marginBps } : { blockHeight: ev.blockHeight, at: ev.at, ok: ev.ok, total: ev.total, max: ev.max };
+      if (last && last.blockHeight === point.blockHeight) h[h.length - 1] = point;
+      else h.push(point);
+      if (h.length > HISTORY_POINTS) h.splice(0, h.length - HISTORY_POINTS);
+      this.history.set(key, h);
+    }
     if (ev.ok) this.state.lastPassed[key] = { blockHeight: ev.blockHeight, at: ev.at };
     if (ev.type === "solvency") {
-      for (const r of ev.reads) this.reads.set(r.id, { ...r, protocolId, ruleId: ev.ruleId });
-      this.readsDirty = true;
+      for (const r of ev.reads) {
+        const x = { ...r, protocolId, ruleId: ev.ruleId };
+        this.reads.set(r.id, x);
+        this.newReads.push(x);
+      }
       if (this.reads.size > MAX_READS) {
         const drop = this.reads.size - MAX_READS;
         let i = 0;
@@ -155,6 +289,17 @@ export class Store {
           ? { total: ev.total, max: ev.max }
           : { proposalId: ev.proposalId, summary: ev.summary };
     this.emit({ type: "evaluation", protocolId, data: { ruleId: ev.ruleId, ruleType: ev.type, ok: ev.ok, blockHeight: ev.blockHeight, ...detail } });
+  }
+
+  /** Recent evaluations per rule of a protocol, oldest first. */
+  evaluationHistory(protocolId: string): Record<string, HistoryPoint[]> {
+    const out: Record<string, HistoryPoint[]> = {};
+    for (const r of this.rules(protocolId)) out[r.id] = this.history.get(`${protocolId}/${r.id}`) ?? [];
+    return out;
+  }
+
+  breach(id: string): Breach | undefined {
+    return this.state.breaches.find((b) => b.id === id);
   }
 
   evaluation(protocolId: string, ruleId: string): Evaluation | undefined {
@@ -278,12 +423,6 @@ export function newId(prefix: string): string {
 
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
-}
-
-function writeAtomic(file: string, data: string): void {
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, data);
-  fs.renameSync(tmp, file);
 }
 
 export function bigintReplacer(_k: string, v: unknown): unknown {

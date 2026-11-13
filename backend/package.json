@@ -17,10 +17,15 @@
     "test:e2e": "vitest run test/e2e",
     "seed:intents": "tsx scripts/seed-intents.ts",
     "deploy:testnet": "tsx scripts/deploy-testnet.ts",
-    "firewall:replay": "tsx scripts/firewall-replay.ts"
+    "firewall:replay": "tsx scripts/firewall-replay.ts",
+    "replay:testnet": "tsx scripts/testnet-replay.ts"
   },
   "dependencies": {
-    "near-kit": "0.20.2"
+    "@better-auth/api-key": "1.7.22",
+    "@better-auth/core": "1.7.22",
+    "better-auth": "1.7.22",
+    "near-kit": "0.20.2",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

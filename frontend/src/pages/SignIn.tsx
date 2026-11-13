@@ -1,85 +1,166 @@
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
-import { getToken, setToken, verifyToken } from "../lib/session";
+import { setToken, verifyToken } from "../lib/session";
+import { api, ApiError, me } from "../lib/api";
+import { signInWithWallet, WalletError, type WalletNetwork } from "../lib/wallet";
 import { useTitle } from "../lib/hooks";
 import "../styles/auth.css";
+import "../styles/app.css";
+
+type Mode = "wallet" | "email" | "token";
 
 export default function SignIn() {
   useTitle("Sign in");
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? "/app";
-  const inputId = useId();
-  const errorId = useId();
-  const [token, setValue] = useState("");
-  const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<Mode>("wallet");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  // Already signed in this tab: go straight on.
   useEffect(() => {
-    if (getToken()) navigate(from, { replace: true });
+    let live = true;
+    me()
+      .then((m) => live && m && navigate(from, { replace: true }))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, [from, navigate]);
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(null);
-    const r = await verifyToken(token);
-    setBusy(false);
-    if (!r.ok) return setError(r.message);
-    setToken(token.trim());
-    navigate(from, { replace: true });
+    try {
+      await fn();
+      navigate(from, { replace: true });
+    } catch (e) {
+      setError(e instanceof ApiError || e instanceof WalletError ? e.message : `Something went wrong: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <section className="auth-page container" aria-labelledby="signin-title">
       <div className="auth-glow" aria-hidden="true" />
       <div className="auth-card card">
-        <p className="eyebrow">Operator sign-in</p>
+        <p className="eyebrow">Sign in</p>
         <h1 id="signin-title" className="serif auth-title">
           Sign in to <em>Qorvex</em>
         </h1>
-        <p className="muted">
-          Each Qorvex server has one operator token. The server prints it when it starts; set your own with <code className="mono">QORVEX_ADMIN_TOKEN</code>.
-        </p>
-        <form onSubmit={onSubmit} noValidate>
-          <label htmlFor={inputId} className="auth-label mono">
-            Operator token
-          </label>
-          <div className="auth-input-row">
-            <input
-              id={inputId}
-              type={show ? "text" : "password"}
-              autoComplete="off"
-              spellCheck={false}
-              autoCapitalize="off"
-              value={token}
-              onChange={(e) => setValue(e.target.value)}
-              aria-invalid={!!error}
-              aria-describedby={error ? errorId : undefined}
-              className="auth-input mono"
-              placeholder="Paste the token from the server output"
-              required
-            />
-            <button type="button" className="auth-reveal" onClick={() => setShow((s) => !s)} aria-pressed={show}>
-              {show ? "Hide" : "Show"}
+        <div className="seg" role="tablist" aria-label="Sign-in method">
+          {(["wallet", "email", "token"] as const).map((m) => (
+            <button key={m} role="tab" aria-selected={mode === m} className={`seg-btn ${mode === m ? "on" : ""}`} onClick={() => (setMode(m), setError(null))}>
+              {m === "wallet" ? "NEAR wallet" : m === "email" ? "Email" : "Operator token"}
             </button>
-          </div>
-          {error && (
-            <p id={errorId} className="auth-error" role="alert">
-              {error}
-            </p>
-          )}
-          <button type="submit" className="btn btn-primary auth-submit" disabled={busy}>
-            {busy ? "Checking…" : "Sign in"}
-          </button>
-        </form>
+          ))}
+        </div>
+        {mode === "wallet" && <WalletForm busy={busy} onGo={(n) => run(async () => void (await signInWithWallet(n)))} />}
+        {mode === "email" && <EmailForm busy={busy} onGo={(path, body) => run(async () => void (await api(path, { body })))} />}
+        {mode === "token" && (
+          <TokenForm
+            busy={busy}
+            onGo={(t) =>
+              run(async () => {
+                const r = await verifyToken(t);
+                if (!r.ok) throw new ApiError(401, r.message);
+                setToken(t.trim());
+              })
+            }
+          />
+        )}
+        {error && (
+          <p className="auth-error" role="alert">
+            {error}
+          </p>
+        )}
         <p className="auth-foot faint">
-          The token is checked against this server and kept only for this browser tab. No server running yet?{" "}
-          <Link to="/docs/getting-started#sign-in">Start one locally</Link>.
+          Just looking? <Link to="/check">Check any contract</Link> without an account.
         </p>
       </div>
     </section>
+  );
+}
+
+function WalletForm({ busy, onGo }: { busy: boolean; onGo: (n: WalletNetwork) => void }) {
+  const [network, setNetwork] = useState<WalletNetwork>("mainnet");
+  return (
+    <div className="stack">
+      <p className="muted">Your wallet signs a one-time message for this site. Nothing is sent on-chain and no fee is charged. A full-access key is required.</p>
+      <label className="auth-label mono">
+        Network
+        <select className="auth-input mono" value={network} onChange={(e) => setNetwork(e.target.value as WalletNetwork)}>
+          <option value="mainnet">mainnet</option>
+          <option value="testnet">testnet</option>
+        </select>
+      </label>
+      <button className="btn btn-primary auth-submit" disabled={busy} onClick={() => onGo(network)}>
+        {busy ? "Waiting for the wallet…" : "Connect wallet and sign in"}
+      </button>
+    </div>
+  );
+}
+
+function EmailForm({ busy, onGo }: { busy: boolean; onGo: (path: string, body: object) => void }) {
+  const [signUp, setSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const ids = { e: useId(), p: useId(), n: useId() };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    onGo(signUp ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email", signUp ? { email, password, name: name || email.split("@")[0] } : { email, password });
+  };
+  return (
+    <form onSubmit={submit} className="stack">
+      {signUp && (
+        <>
+          <label htmlFor={ids.n} className="auth-label mono">
+            Name
+          </label>
+          <input id={ids.n} className="auth-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+        </>
+      )}
+      <label htmlFor={ids.e} className="auth-label mono">
+        Email
+      </label>
+      <input id={ids.e} className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+      <label htmlFor={ids.p} className="auth-label mono">
+        Password {signUp && <span className="faint">(at least 12 characters)</span>}
+      </label>
+      <input id={ids.p} className="auth-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={signUp ? "new-password" : "current-password"} minLength={signUp ? 12 : undefined} required />
+      <button type="submit" className="btn btn-primary auth-submit" disabled={busy}>
+        {busy ? "…" : signUp ? "Create account" : "Sign in"}
+      </button>
+      <button type="button" className="text-link" onClick={() => setSignUp((s) => !s)}>
+        {signUp ? "I already have an account" : "Create an account"}
+      </button>
+    </form>
+  );
+}
+
+function TokenForm({ busy, onGo }: { busy: boolean; onGo: (t: string) => void }) {
+  const [token, setValue] = useState("");
+  const id = useId();
+  return (
+    <form
+      className="stack"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onGo(token);
+      }}
+    >
+      <p className="muted">
+        Self-hosted, single-tenant servers have one operator token, printed at startup (<code className="mono">QORVEX_ADMIN_TOKEN</code>). It is kept for this tab only.
+      </p>
+      <label htmlFor={id} className="auth-label mono">
+        Operator token
+      </label>
+      <input id={id} type="password" className="auth-input mono" autoComplete="off" spellCheck={false} value={token} onChange={(e) => setValue(e.target.value)} required />
+      <button type="submit" className="btn btn-primary auth-submit" disabled={busy}>
+        {busy ? "Checking…" : "Sign in"}
+      </button>
+    </form>
   );
 }
