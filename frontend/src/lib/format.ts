@@ -38,3 +38,20 @@ export function explorerTx(network: string, hash: string): string | null {
   if (network === "testnet") return `https://testnet.nearblocks.io/txns/${hash}`;
   return null;
 }
+
+const YOCTO = 10n ** 24n;
+
+/** "1.5" NEAR -> yoctoNEAR string. Throws on anything that is not a plain non-negative amount. */
+export function nearToYocto(near: string): string {
+  const m = /^(\d{1,12})(?:\.(\d{1,24}))?$/.exec(near.trim());
+  if (!m) throw new Error(`"${near}" is not a NEAR amount`);
+  return (BigInt(m[1]) * YOCTO + BigInt((m[2] ?? "").padEnd(24, "0") || "0")).toString();
+}
+
+/** yoctoNEAR string -> "1.5" (up to 5 decimals). */
+export function yoctoToNear(yocto: string | undefined): string {
+  if (!yocto || !/^\d+$/.test(yocto)) return "";
+  const v = BigInt(yocto);
+  const frac = (v % YOCTO).toString().padStart(24, "0").slice(0, 5).replace(/0+$/, "");
+  return `${v / YOCTO}${frac ? `.${frac}` : ""}`;
+}

@@ -85,7 +85,7 @@ export default function ContractPage() {
       <div className="row-between">
         <div>
           <p className="faint small">
-            <Link to="/app">Contracts</Link> /
+            <Link to="/app/contracts">Contracts</Link> /
           </p>
           <h1 className="mono h-contract">{p.contractId}</h1>
           <p className="faint small mono">

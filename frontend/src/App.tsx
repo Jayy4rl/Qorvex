@@ -10,6 +10,7 @@ const SignIn = lazy(() => import("./pages/SignIn"));
 const AppHome = lazy(() => import("./pages/AppHome"));
 const Check = lazy(() => import("./pages/Check"));
 const StatusPage = lazy(() => import("./pages/StatusPage"));
+const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 export function AppRoutes() {
@@ -25,6 +26,7 @@ export function AppRoutes() {
           <Route path="check" element={<Check />} />
           <Route path="c/:network/:contractId" element={<Check />} />
           <Route path="status/:id" element={<StatusPage />} />
+          <Route path="accept-invite/:id" element={<AcceptInvite />} />
           <Route path="app/*" element={<AppHome />} />
           <Route path="*" element={<NotFound />} />
         </Route>

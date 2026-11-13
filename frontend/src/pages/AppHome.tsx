@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import type { Protocol } from "@qorvex/shared";
 import { api, me, signOut, type Me } from "../lib/api";
 import { clearToken } from "../lib/session";
@@ -8,6 +8,9 @@ import { useTitle } from "../lib/hooks";
 import ContractPage from "./ContractPage";
 import IncidentPage from "./IncidentPage";
 import Simulations from "./Simulations";
+import Overview from "./Overview";
+import Relayers, { RelayerDetail } from "./Relayers";
+import Team from "./Team";
 import type { Health } from "@qorvex/shared";
 import "../styles/auth.css";
 import "../styles/app.css";
@@ -45,7 +48,11 @@ export default function AppHome() {
         <CreateWorkspace onDone={reload} />
       ) : (
         <Routes>
-          <Route index element={<Contracts who={who} />} />
+          <Route index element={<Overview />} />
+          <Route path="contracts" element={<Contracts who={who} />} />
+          <Route path="relayers" element={<Relayers />} />
+          <Route path="relayers/:id" element={<RelayerDetail />} />
+          <Route path="team" element={<Team who={who} />} />
           <Route path="contracts/:id" element={<ContractPage />} />
           <Route path="incidents/:id" element={<IncidentPage />} />
           <Route path="simulations" element={<Simulations />} />
@@ -79,8 +86,13 @@ function AppBar({ who, onChange }: { who: Me; onChange: () => void }) {
         {who.workspace && <span className="pill pill-outline-lime tiny">{who.workspace.role}</span>}
         {who.workspace && (
           <nav className="row small" aria-label="Console">
-            <Link to="/app">Contracts</Link>
-            {demo && <Link to="/app/simulations">Simulations</Link>}
+            <NavItem to="/app" end>
+              Overview
+            </NavItem>
+            <NavItem to="/app/contracts">Contracts</NavItem>
+            <NavItem to="/app/relayers">Relayers</NavItem>
+            <NavItem to="/app/team">Team</NavItem>
+            {demo && <NavItem to="/app/simulations">Simulations</NavItem>}
           </nav>
         )}
         {who.workspaces.length > 1 && (
@@ -103,6 +115,14 @@ function AppBar({ who, onChange }: { who: Me; onChange: () => void }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function NavItem({ to, end, children }: { to: string; end?: boolean; children: React.ReactNode }) {
+  return (
+    <NavLink to={to} end={end} className={({ isActive }) => `app-nav ${isActive ? "on" : ""}`}>
+      {children}
+    </NavLink>
   );
 }
 
