@@ -115,30 +115,43 @@ Screenshots are captured from the running application: the local sandbox demo, a
 
 ### A. Hosted app (about 3 minutes, nothing to install)
 
-1. Open **https://qorvexbackend-production.up.railway.app** and press **Get started**.
-2. Keep `testnet`, enter **`ledger.proudrobe4711.testnet`** and press **Check**.
-   → It is recognised as embedding qorvex-guard, **registered with the guardian (level 3)** and controlled by `owner.proudrobe4711.testnet`. Open **How we know** to see each read-only probe.
-3. **Sign in → Email → Create an account**, then name a workspace.
-   → You land on **Overview**, with Contracts, Relayers and Team in the left sidebar.
-4. **Relayers → Add relayer**: the token is shown once with an SDK snippet. Then **Set the budget → Use the gas-sponsor template**.
-5. **Team → Invite someone** by email: you get an invitation link to share.
+| # | Do | See |
+|---|---|---|
+| 1 | Open https://qorvexbackend-production.up.railway.app and press **Get started** | The contract check page, network set to `testnet` |
+| 2 | Enter `ledger.proudrobe4711.testnet` and press **Check** | "Embeds qorvex-guard", **registered with the guardian (level 3)**, controller `owner.proudrobe4711.testnet` |
+| 3 | Expand **How we know (… read-only probes)** under the result | Each probe, the value it returned and where it was read from |
+| 4 | **Sign in → Email → Create an account**, then **Create workspace** | **Overview**, with Contracts, Relayers and Team in the left sidebar |
+| 5 | **Relayers → Add relayer** | The relayer token, shown once, and an SDK snippet |
+| 6 | **Set the budget → Use the gas-sponsor template** | "Applied the gas-sponsor budget: at most 1 NEAR and 10 storage deposits per beneficiary per day" |
+| 7 | **Team**: under *Invite someone*, enter any email address and press **Invite** | "Invitation created" and an invitation link to share |
 
-### B. Full exploit replays, locally (about 5 minutes)
+### B. Exploit replays on a local NEAR sandbox (about 5 minutes)
 
 ```bash
 npm ci
 npm run demo
 ```
 
-The first run downloads the nearcore sandbox binary (about 90 MB). When the `Qorvex console:` line appears, open `http://localhost:8787/sign-in`, choose **Operator token** and paste the token printed on that line. Then:
+| # | Do | See |
+|---|---|---|
+| 1 | Wait for the `Qorvex console:` line (the first run downloads the nearcore sandbox binary, about 90 MB) | A URL and an operator token |
+| 2 | Open `http://localhost:8787/sign-in`, choose **Operator token**, paste the token | The console overview |
+| 3 | **Contracts → Add a contract**, network `sandbox`, `ledger.test.near`, **Check**, then **I control this contract: claim and protect it** | The contract page, Setup tab |
+| 4 | **Rules → Load demo source → Draft rules with AI** | Two drafted rules (solvency and hourly outflow) with live values and backtests |
+| 5 | On the solvency rule, press **Approve: alert + auto-pause** | The rule moves to *Approved and rejected* |
+| 6 | **Setup → Sign with the sandbox owner key** | Guardian authorised, level 3 |
+| 7 | **Simulations → Run the exploit as Mallory** | Owed rises above held, then **PAUSED** a few blocks later |
+| 8 | **Mallory tries to cash out** | The withdrawal is rejected because the contract is paused |
+| 9 | Open the incident | Evidence with reproducible reads, timeline, pause transaction, AI explanation, recovery transactions |
 
-1. **Contracts → Add a contract** → network `sandbox` → `ledger.test.near` → **Check** → **claim and protect it**.
-2. **Rules → Load demo source → Draft rules with AI**, then approve the solvency rule as **alert + auto-pause**.
-3. **Setup → Sign with the sandbox owner key** (local sandbox accounts are signed by the demo) → level 3.
-4. **Simulations → Run the exploit as Mallory**: owed rises above held, then **PAUSED** within a few blocks. **Mallory tries to cash out** → rejected.
-5. Open the incident: evidence, timeline, pause transaction, explanation and recovery steps.
+The local sandbox accounts are signed by the demo itself, so no wallet is needed. The replays are simulations of the public incident reports, run against the demo contracts.
 
-To run the whole scripted scenario without clicking: `npm run demo -- --auto` (add `--exit` to stop afterwards). Its output is shown in [Testing & verification](#9-testing--verification).
+### C. The whole scenario in one command
+
+| Do | See |
+|---|---|
+| `npm run demo -- --auto --exit` | The scripted scenario: AI drafts rules, the ghost-balance exploit is paused 4 blocks after the breach, the vault pauses itself, 92 of 100 relayer drain calls are refused, and the DAO firewall rejects a bad proposal. The output is shown in [Testing & verification](#9-testing--verification) |
+| `npm run check` | Typecheck, 97 backend unit tests, 32 frontend tests and the build pass |
 
 ---
 
@@ -255,11 +268,28 @@ sequenceDiagram
 | Hosting | Docker, **Railway** | Hosted demo |
 | Testing | vitest, cargo test, near-kit sandbox | Unit, end-to-end and contract tests |
 
+**Tracks and the NEAR features each one uses**
+
+| Track | NEAR features used | Where |
+|---|---|---|
+| `security` (AI Security & Defense) | Function-call keys: Qorvex's only key can call `guardian.pause` and nothing else. Spending limits and a policy engine for relayers. AI drafts rules but cannot approve them or trigger a pause. | `contracts/guardian`, `backend/src/relayer`, `sdk/` |
+| `defi` (Unstoppable DeFi) | Solvency invariants for NEAR Intents-style ledgers and vaults; read-only solvency rules for mainnet `intents.near` (`mt_supply` against each token's `ft_balance_of`), backtested over 30 days of archival state | `contracts/qorvex-guard`, `backend/scripts/seed-intents.ts` |
+| `social` (Social Money) | Sputnik DAO: a reject-only firewall role that votes down proposals breaking the treasury policy, guardian authorisation signed by a DAO, and budgets for Trezu-style proposal sponsorship | `backend/src/firewall`, `backend/src/tenancy/authority.ts` |
+
+NEAR AI Cloud (private inference in TEEs) runs both AI tasks; HOT's NEAR Connect handles wallets.
+
+**Disclosures**
+
+- **When it was built:** all code was written during the hackathon window. The first commit is dated 2026-11-10, so there is no earlier baseline.
+- **Other chains:** none. Qorvex is built only for NEAR.
+- **Libraries:** listed in the table above, with exact versions in each `package.json` and `Cargo.toml`. Sputnik DAO v2.3.1 is vendored as the published wasm, hash-checked against mainnet.
+- **AI assistance:** the code was written with Claude Code, an AI coding assistant.
+
 ---
 
 ## 8. Getting started
 
-**Prerequisites:** Node.js 22 or newer (tested with 24.21), Linux or macOS on x86_64/arm64, about 1 GB of free RAM. Rust is only needed to rebuild the contracts; the built wasm is committed in [`contracts/wasm/`](contracts/wasm/).
+**Prerequisites:** Node.js 22 or newer (tested with 24.21), Linux or macOS on x86_64/arm64, about 1 GB of free RAM. Rust is only needed to rebuild the contracts and run the contract tests; the built wasm is committed in [`contracts/wasm/`](contracts/wasm/).
 
 ```bash
 git clone https://github.com/Jayy4rl/Qorvex.git
@@ -306,7 +336,7 @@ QORVEX_NETWORKS=testnet npm start
 |---|---|---|
 | Typecheck, backend unit, frontend, build | `npm run check` | **97** backend unit tests (9 files) and **32** frontend tests (4 files) pass; build succeeds |
 | End-to-end on a local nearcore sandbox | `npm run test:e2e` | **16** tests pass (about 4 minutes) |
-| Contracts | `npm run test:contracts` | **48** tests pass: guardian 28, qorvex-guard 13, demo ledger 7 |
+| Contracts (needs Rust) | `npm run test:contracts` | **48** tests pass: guardian 28, qorvex-guard 13, demo ledger 7 |
 
 The suites cover, among others:
 - every workspace route called as another workspace's user, with no data returned;
@@ -406,4 +436,4 @@ The demo ledger carries the "refund after credit" bug on purpose, for the replay
 
 ---
 
-<sub>MIT licensed: see [LICENSE](LICENSE). Libraries are listed in [Tech stack & integrations](#7-tech-stack--integrations); development used Claude Code.</sub>
+<sub>MIT licensed: see [LICENSE](LICENSE).</sub>

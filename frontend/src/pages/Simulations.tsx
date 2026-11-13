@@ -99,7 +99,7 @@ export default function Simulations() {
         <h1 className="serif page-title">
           Simulations <span className="pill pill-warn tiny">Simulated · local sandbox</span>
         </h1>
-        <p className="muted lede">Replays of the two incidents in the PRD, on contracts with the same bugs. Each button sends a real transaction to the local nearcore sandbox; Qorvex reacts exactly as it would on mainnet.</p>
+        <p className="muted lede">Replays of the NEAR Intents ghost-balance bug and the Trezu sponsor drain, on contracts with the same bugs. Each button sends a real transaction to the local nearcore sandbox; Qorvex reacts exactly as it would on mainnet.</p>
         {(!watched(A.ledger) || !watched(A.vault)) && (
           <p className="notice">
             Connect the ledger and vault first (Check a contract → sandbox → claim), approve a solvency rule as “alert + auto-pause” and authorise the guardian, or run <code className="mono">npm run demo -- --auto</code> once.

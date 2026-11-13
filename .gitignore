@@ -7,8 +7,12 @@
 **/credentials/
 .near-credentials/
 
-# Submission payload contains personal data (HACKATHON.md §3)
+# Submission payload contains personal data
 submission*.json
+
+# Local planning notes, kept out of the repository
+HACKATHON.md
+Qorvex — Product Requirement.md
 
 # Runtime data (stores, sandbox/testnet keys, caches)
 data/

@@ -56,7 +56,7 @@ pause tx in block 170 → guardian receipt in 171 → target paused in 172
 4 blocks, 3.0 s after detection`}
       />
       <p>
-        The PRD target is 3 blocks; the transaction lands one block later than ideal. Reaching 3 blocks needs a node-local indexer (the NEAR Indexer
+        The target is 3 blocks; the transaction lands one block later than ideal. Reaching 3 blocks needs a node-local indexer (the NEAR Indexer
         framework) instead of polling. Testnet latency has not been measured yet.
       </p>
       <Callout tone="warn" title="What the watcher can’t do">
