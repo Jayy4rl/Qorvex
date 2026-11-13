@@ -3,6 +3,25 @@
   "version": "0.1.0",
   "description": "Spending limits for NEAR gas relayers and payout services: ask Qorvex before you sign. Zero dependencies.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jayy4rl/Qorvex.git",
+    "directory": "sdk"
+  },
+  "homepage": "https://github.com/Jayy4rl/Qorvex/tree/main/sdk#readme",
+  "bugs": {
+    "url": "https://github.com/Jayy4rl/Qorvex/issues"
+  },
+  "keywords": [
+    "near",
+    "near-protocol",
+    "relayer",
+    "gas-sponsor",
+    "meta-transactions",
+    "spending-limits",
+    "security",
+    "qorvex"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,15 +31,23 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "typescript": "5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

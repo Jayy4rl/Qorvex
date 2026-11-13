@@ -13,7 +13,7 @@ cd /path/to/your-relayer && npm install /path/to/Qorvex/sdk/qorvex-relayer-sdk-0
 import { Qorvex } from "@qorvex/relayer-sdk";
 
 const qorvex = new Qorvex({
-  url: process.env.QORVEX_URL!,               // your Qorvex server
+  url: process.env.QORVEX_URL!,               // https://qorvexbackend-production.up.railway.app, or your own server
   relayerId: process.env.QORVEX_RELAYER_ID!,  // from the console
   token: process.env.QORVEX_RELAYER_TOKEN!,   // shown once when the relayer is created
   // Optional: keep sponsoring tiny gas fees during a Qorvex outage, up to a local cap.
