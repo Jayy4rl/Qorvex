@@ -23,7 +23,7 @@ import type { Alerter } from "../alerts/alerts.ts";
 import { firewallRole, verifyFirewallPolicy } from "../firewall/policy.ts";
 import { humanizePolicy } from "../firewall/humanize.ts";
 import { cachedTokenMeta } from "../near/tokens.ts";
-import { HttpError, MAX_SSE_CLIENTS, SECURITY_HEADERS, body, num, obj, send, str } from "./http.ts";
+import { HttpError, MAX_SSE_CLIENTS, SECURITY_HEADERS, body, errorCode, num, obj, send, str } from "./http.ts";
 import { allowed, actorOf, bearer, resolvePrincipal, type Principal } from "./principal.ts";
 import type { Action } from "../auth/access.ts";
 import type { QorvexAuth } from "../auth/auth.ts";
@@ -633,7 +633,8 @@ export function createServer(d: ApiDeps): http.Server {
       if (he.status >= 500) d.log(`HTTP ${req.method} ${url.pathname}: ${(e as Error).stack ?? e}`);
       // The rest of an oversized body is still unread: close the socket so it is not reused.
       if (he.status === 413 && !res.headersSent) res.setHeader("connection", "close");
-      if (!res.headersSent) send(res, he.status, { error: he.message, ...(he.extra ? { details: he.extra } : {}) });
+      // `error` stays detailed (developers, logs, the browser's network tab); the web app shows its own sentence per `code`.
+      if (!res.headersSent) send(res, he.status, { error: he.message, code: errorCode(he), ...(he.extra ? { details: he.extra } : {}) });
       else res.end();
     }
   });

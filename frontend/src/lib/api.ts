@@ -10,6 +10,8 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly details?: any,
+    /** Machine-readable reason (see lib/errors.ts for what people are shown). */
+    public readonly code?: string,
   ) {
     super(message);
   }
@@ -39,7 +41,7 @@ export async function api<T = any>(path: string, o: { method?: string; body?: un
   } catch {
     json = text;
   }
-  if (!res.ok) throw new ApiError(res.status, json?.error ?? json?.message ?? `HTTP ${res.status}`, json?.details ?? json);
+  if (!res.ok) throw new ApiError(res.status, json?.error ?? json?.message ?? `HTTP ${res.status}`, json?.details ?? json, typeof json?.code === "string" ? json.code : undefined);
   return json as T;
 }
 

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { Breach, NetworkId, WalletTx } from "@qorvex/shared";
-import { api, ApiError } from "../lib/api";
-import { sendTransactions, WalletError } from "../lib/wallet";
+import { api } from "../lib/api";
+import { sendTransactions } from "../lib/wallet";
 import { useLiveEvents, useThrottled } from "../lib/live";
 import { amount, explorerTx, pct, short } from "../lib/format";
 import { TxList } from "./ContractPage";
+import { errorText, pauseReason } from "../lib/errors";
 
 interface IncidentView {
   breach: Breach;
@@ -29,7 +30,7 @@ export default function IncidentPage() {
     try {
       setV(await api<IncidentView>(`/api/breaches/${id}`));
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     }
   }, [id]);
   useEffect(() => void load(), [load]);
@@ -71,7 +72,7 @@ export default function IncidentPage() {
           {b.pause?.status === "landed" && `Contained: paused at block ${b.pause.pausedAtBlock?.toLocaleString()}, ${b.pause.blocksAfterBreach} blocks after the breaking block`}
           {b.vote?.status === "landed" && `Contained: proposal voted down, ${b.vote.blocksAfterProposal} blocks after it was submitted`}
           {!contained && b.response === "alert" && "Alert only: this rule does not pause"}
-          {!contained && b.response !== "alert" && `Not contained: ${b.pause?.error ?? b.vote?.error ?? b.pause?.status ?? b.vote?.status ?? "no action"}`}
+          {!contained && b.response !== "alert" && `Not contained: ${b.vote ? "the reject vote didn't go through" : pauseReason(b.pause?.error, b.pause?.status)}`}
         </span>
         <span className="small">
           Broke at block {b.triggerBlock.toLocaleString()} · {new Date(b.detectedAt).toLocaleString()} · contract is now {v.paused === null ? "in an unknown pause state" : v.paused ? "paused" : "running"}
@@ -233,7 +234,7 @@ function Recovery({ v, onDone }: { v: IncidentView; onDone: () => void }) {
       onDone();
     } catch (e) {
       setState(null);
-      setErr(e instanceof ApiError || e instanceof WalletError ? e.message : String(e));
+      setErr(errorText(e));
     }
   };
   return (

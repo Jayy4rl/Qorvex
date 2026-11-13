@@ -1,11 +1,12 @@
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { setToken, verifyToken } from "../lib/session";
-import { api, ApiError, me } from "../lib/api";
-import { signInWithWallet, WalletError, type WalletNetwork } from "../lib/wallet";
+import { api, me } from "../lib/api";
+import { signInWithWallet, type WalletNetwork } from "../lib/wallet";
 import { useTitle } from "../lib/hooks";
 import "../styles/auth.css";
 import "../styles/app.css";
+import { errorText, UserFacingError } from "../lib/errors";
 
 type Mode = "wallet" | "email" | "token";
 
@@ -35,7 +36,7 @@ export default function SignIn() {
       await fn();
       navigate(from, { replace: true });
     } catch (e) {
-      setError(e instanceof ApiError || e instanceof WalletError ? e.message : `Something went wrong: ${(e as Error).message}`);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -64,7 +65,7 @@ export default function SignIn() {
             onGo={(t) =>
               run(async () => {
                 const r = await verifyToken(t);
-                if (!r.ok) throw new ApiError(401, r.message);
+                if (!r.ok) throw new UserFacingError(r.message);
                 setToken(t.trim());
               })
             }

@@ -52,7 +52,9 @@ async function signNonce(network: WalletNetwork, n: NonceResponse, signerId?: st
   try {
     return await w.signMessage({ message: n.message, recipient: n.recipient, nonce: fromB64(n.nonce), network, ...(signerId ? { signerId } : {}) });
   } catch (e) {
-    throw new WalletError(`The wallet did not sign: ${(e as Error).message || "request rejected"}`);
+    const why = String((e as Error)?.message ?? "");
+    console.error("[qorvex] wallet signMessage failed:", e);
+    throw new WalletError(/reject|cancel|denied|closed|abort/i.test(why) || !why ? "You cancelled the request in your wallet." : "Your wallet couldn't sign this request. Try again, or choose another wallet.");
   }
 }
 
@@ -66,7 +68,7 @@ export async function signInWithWallet(network: WalletNetwork, link = false): Pr
 
 /** A step-up proof for one action, ready for the x-qorvex-step-up header. */
 export async function stepUpHeader(network: NetworkId, action: string, target: string, params: unknown, signerId?: string): Promise<Record<string, string>> {
-  if (network === "sandbox") throw new WalletError("Wallets cannot sign for the local sandbox. Use the operator token for sandbox demos.");
+  if (network === "sandbox") throw new WalletError("Wallets can't sign for the local demo network. Sign in with the operator token to use it.");
   const n = await api<NonceResponse>("/api/auth/near/nonce", { body: { network, purpose: "step-up", action, target, params } });
   const s = await signNonce(network, n, signerId);
   const proof = { nonce: n.nonce, accountId: s.accountId, publicKey: s.publicKey, signature: s.signature };
@@ -90,7 +92,14 @@ export async function withStepUp<T>(network: NetworkId, call: (headers: Record<s
 /** Ask the wallet to sign and send the server-built transactions, in order. */
 export async function sendTransactions(network: WalletNetwork, txs: WalletTx[]): Promise<string[]> {
   const w = await wallet(network);
-  const outcomes = await w.signAndSendTransactions({ network, transactions: txs.map((t) => ({ receiverId: t.receiverId, actions: t.actions })) });
+  let outcomes: unknown[];
+  try {
+    outcomes = await w.signAndSendTransactions({ network, transactions: txs.map((t) => ({ receiverId: t.receiverId, actions: t.actions })) });
+  } catch (e) {
+    const why = String((e as Error)?.message ?? "");
+    console.error("[qorvex] wallet signAndSendTransactions failed:", e);
+    throw new WalletError(/reject|cancel|denied|closed|abort/i.test(why) || !why ? "You cancelled the transaction in your wallet. Nothing was sent." : "The transaction didn't go through. Check your wallet's balance and try again.");
+  }
   return outcomes.map((o: any) => o?.transaction?.hash ?? o?.transaction_outcome?.id ?? "");
 }
 

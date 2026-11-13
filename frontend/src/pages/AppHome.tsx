@@ -1,9 +1,9 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import type { Protocol } from "@qorvex/shared";
-import { api, ApiError, me, signOut, type Me } from "../lib/api";
+import { api, me, signOut, type Me } from "../lib/api";
 import { clearToken } from "../lib/session";
-import { disconnectWallets, signInWithWallet, WalletError } from "../lib/wallet";
+import { disconnectWallets, signInWithWallet } from "../lib/wallet";
 import { useTitle } from "../lib/hooks";
 import ContractPage from "./ContractPage";
 import IncidentPage from "./IncidentPage";
@@ -11,6 +11,7 @@ import Simulations from "./Simulations";
 import type { Health } from "@qorvex/shared";
 import "../styles/auth.css";
 import "../styles/app.css";
+import { errorText } from "../lib/errors";
 
 /**
  * Signed-in app shell: workspace switcher, the workspace's contracts, and the
@@ -24,11 +25,11 @@ export default function AppHome() {
   const reload = useCallback(() => {
     me()
       .then(setWho)
-      .catch((e: Error) => setError(e.message));
+      .catch((e: unknown) => setError(errorText(e)));
   }, []);
   useEffect(reload, [reload]);
 
-  if (error) return <p className="container page auth-error">Couldn’t load your account: {error}</p>;
+  if (error) return <p className="container page auth-error">We couldn’t load your account. {error}</p>;
   if (who === undefined) return <p className="container page faint">Loading…</p>;
   if (who === null) return <Navigate to="/sign-in" replace state={{ from: "/app" }} />;
 
@@ -115,7 +116,7 @@ function CreateWorkspace({ onDone }: { onDone: () => void }) {
       await api("/api/workspaces", { body: { name } });
       onDone();
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorText(err));
     }
   };
   return (
@@ -141,7 +142,7 @@ function Contracts({ who }: { who: Me }) {
   useEffect(() => {
     api<Protocol[]>("/api/protocols")
       .then(setList)
-      .catch((e: Error) => setError(e.message));
+      .catch((e: unknown) => setError(errorText(e)));
   }, []);
   useEffect(() => {
     if (pending) navigate(`/c/${pending.network}/${pending.contractId}`, { replace: true });
@@ -185,7 +186,7 @@ function LinkedAccounts({ who }: { who: Me }) {
       const r = await signInWithWallet(network, true);
       setMsg(`Linked ${r.accountId}. Reload to see it.`);
     } catch (e) {
-      setMsg(e instanceof ApiError || e instanceof WalletError ? e.message : String(e));
+      setMsg(errorText(e));
     }
   };
   return (

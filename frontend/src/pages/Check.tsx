@@ -1,10 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { PROTECTION_LEVELS, type ContractCheck, type NetworkId } from "@qorvex/shared";
-import { api, ApiError, me } from "../lib/api";
-import { withStepUp, WalletError } from "../lib/wallet";
+import { api, me } from "../lib/api";
+import { withStepUp } from "../lib/wallet";
 import { useTitle } from "../lib/hooks";
 import "../styles/app.css";
+import { errorText } from "../lib/errors";
 
 /**
  * Start with only a contract id (friction item 2): no account needed to see
@@ -31,7 +32,7 @@ export default function Check() {
       setResult(fresh ? await api<ContractCheck>("/api/public/check", { body: { network: n, contractId: c } }) : await api<ContractCheck>(`/api/public/contracts/${n}/${c}`));
     } catch (e) {
       setResult(null);
-      setError((e as Error).message);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -95,14 +96,13 @@ function CheckResult({ r, onRefresh }: { r: ContractCheck; onRefresh: () => void
     const who = await me().catch(() => null);
     if (!who) return navigate("/sign-in", { state: { from: `/c/${d.network}/${d.contractId}` } });
     if (!who.workspace) return navigate("/app", { state: { claim: { network: d.network, contractId: d.contractId } } });
-    if (d.network === "sandbox" && who.kind !== "admin") return setClaimError({ msg: "Wallets cannot sign for the local sandbox: sign in with the operator token to claim sandbox contracts." });
+    if (d.network === "sandbox" && who.kind !== "admin") return setClaimError({ msg: "Wallets can't sign for the local demo network. Sign in with the operator token to claim demo contracts." });
     setClaiming(true);
     try {
       const out = await withStepUp(d.network, (headers) => api<{ protocolId: string }>("/api/claims", { body: { network: d.network, contractId: d.contractId }, headers }));
       navigate(`/app/contracts/${out.protocolId}`);
     } catch (e) {
-      if (e instanceof ApiError && e.details?.hint) setClaimError({ msg: e.message, hint: e.details.hint });
-      else setClaimError({ msg: e instanceof ApiError || e instanceof WalletError ? e.message : String(e) });
+      setClaimError({ msg: errorText(e) });
     } finally {
       setClaiming(false);
     }

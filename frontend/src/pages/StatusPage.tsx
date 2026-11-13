@@ -7,6 +7,7 @@ import { ago, amount, explorerTx, NEAR_META, pct, short } from "../lib/format";
 import { useTitle } from "../lib/hooks";
 import { Sparkline } from "../components/Sparkline";
 import "../styles/app.css";
+import { errorText, pauseReason } from "../lib/errors";
 
 type History = Record<string, { blockHeight: number; ok: boolean; marginBps?: number | null; total?: string; owed?: string }[]>;
 
@@ -29,7 +30,7 @@ export default function StatusPage() {
       setHistory(h);
       setError(null);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorText(e));
     }
   }, [id]);
   useEffect(() => void load(), [load]);
@@ -131,7 +132,7 @@ export default function StatusPage() {
                     {b.pause.txHash && <TxLink network={v.protocol.network} hash={b.pause.txHash} />}
                   </p>
                 )}
-                {b.pause && b.pause.status !== "landed" && <p className="small faint">Pause: {b.pause.status}{b.pause.error ? ` (${b.pause.error})` : ""}</p>}
+                {b.pause && b.pause.status !== "landed" && <p className="small faint">Not paused: {pauseReason(b.pause.error, b.pause.status)}.</p>}
                 {b.explanation && <p className="muted small">AI explanation ({b.explanation.model}): {b.explanation.text}</p>}
               </li>
             ))}
@@ -225,7 +226,7 @@ function Figure({ label, value, read }: { label: string; value: string; read?: {
   const [open, setOpen] = useState(false);
   const toggle = async () => {
     setOpen((o) => !o);
-    if (!raw && read) setRaw(await api(`/api/reads/${read.id}`).catch((e: Error) => ({ error: e.message })));
+    if (!raw && read) setRaw(await api(`/api/reads/${read.id}`).catch((e: unknown) => ({ error: errorText(e) })));
   };
   return (
     <div>

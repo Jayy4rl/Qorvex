@@ -4,6 +4,7 @@ import type { Health, Protocol } from "@qorvex/shared";
 import { api } from "../lib/api";
 import { useLiveEvents, useThrottled } from "../lib/live";
 import { amount } from "../lib/format";
+import { errorText, pauseReason } from "../lib/errors";
 
 interface DemoInfo {
   root: string;
@@ -79,7 +80,7 @@ export default function Simulations() {
     try {
       say(await fn());
     } catch (e) {
-      say(`${label}: ${(e as Error).message}`, true);
+      say(`${label}: ${errorText(e)}`, true);
     } finally {
       setBusy(null);
       void loadState().catch(() => {});
@@ -117,13 +118,13 @@ export default function Simulations() {
             <button className="btn btn-sm btn-secondary" disabled={!!busy} onClick={run("deposit", async () => ((await act("deposit", { target: A.ledger, amount: 1000 })).ok ? "Alice deposited 1,000 USDC: the books still balance." : "deposit failed"))}>
               Alice deposits 1,000
             </button>
-            <button className="btn btn-sm btn-secondary" disabled={!!busy} onClick={run("withdraw", async () => { const r = await act("withdraw", { target: A.ledger, who: "alice", amount: 500 }); return r.ok ? "Alice withdrew 500 USDC." : `Alice's withdrawal was refused: ${r.error}`; })}>
+            <button className="btn btn-sm btn-secondary" disabled={!!busy} onClick={run("withdraw", async () => { const r = await act("withdraw", { target: A.ledger, who: "alice", amount: 500 }); return r.ok ? "Alice withdrew 500 USDC." : `Alice's withdrawal was refused${/paused/.test(r.error ?? "") ? ": the ledger is paused" : ""}.`; })}>
               Alice withdraws 500
             </button>
             <button className="btn btn-sm btn-primary" disabled={!!busy} onClick={run("ghost", async () => `Mallory's ghost deposit (40,000 USDC, failing notification) sent: ${(await api<{ txHash: string }>("/api/demo/ghost", { body: { target: A.ledger, amount: 40_000 } })).txHash}`)}>
               Run the exploit as Mallory
             </button>
-            <button className="btn btn-sm btn-secondary" disabled={!!busy} onClick={run("cash out", async () => { const r = await act("withdraw", { target: A.ledger, who: "mallory", amount: 40_000 }); return r.ok ? "Mallory cashed out 40,000 USDC: the ledger was NOT paused in time." : `Mallory's withdrawal was rejected: ${r.error}`; })}>
+            <button className="btn btn-sm btn-secondary" disabled={!!busy} onClick={run("cash out", async () => { const r = await act("withdraw", { target: A.ledger, who: "mallory", amount: 40_000 }); return r.ok ? "Mallory cashed out 40,000 USDC: the ledger was NOT paused in time." : `Mallory's withdrawal was rejected${/paused/.test(r.error ?? "") ? ": the ledger is paused, so the stolen balance can't leave" : ""}.`; })}>
               Mallory tries to cash out
             </button>
             <button className="btn btn-sm btn-secondary" disabled={!!busy} onClick={run("rearm", async () => `Recovered: ${(await act("rearm", {})).steps.join("; ")}.`)}>
@@ -186,7 +187,7 @@ export default function Simulations() {
                 const last = (await api<any[]>(`/api/protocols/${watched(A.treasury)?.id}/proposals`).catch(() => []))[0];
                 if (!last) return "No proposal to approve yet.";
                 const r = await act("council-approve", { id: last.proposalId });
-                return r.error ? `Council approval of #${last.proposalId} failed: ${r.error}` : `Council approved #${last.proposalId}: status ${r.status}.`;
+                return r.error ? `The council couldn't approve #${last.proposalId}${/NOT_READY|Rejected/i.test(r.error) ? ": Qorvex already voted it down" : ""}.` : `Council approved #${last.proposalId}: status ${r.status}.`;
               })}
             >
               Council approves the last proposal
@@ -255,8 +256,7 @@ function Outcome({ b }: { b: BreachRow }) {
         </p>
       ) : (
         <p className="small">
-          Latest incident: {b.explain} · pause {b.pause?.status ?? "—"}
-          {b.pause?.error ? ` (${b.pause.error})` : ""}
+          Latest incident: {b.explain} · {pauseReason(b.pause?.error, b.pause?.status)}
         </p>
       )}
       <Link to={`/app/incidents/${b.id}`} className="small">

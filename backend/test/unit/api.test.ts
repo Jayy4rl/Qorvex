@@ -330,7 +330,11 @@ describe("workspaces", () => {
 
   it("anonymous callers get 401 on workspace routes", async () => {
     for (const [m, p] of [["GET", "/api/protocols"], ["GET", "/api/claims"], ["GET", "/api/apikeys"], ["GET", "/api/audit"], ["POST", "/api/claims"]]) {
-      expect((await call(m, p, { body: m === "GET" ? undefined : {} })).status, `${m} ${p}`).toBe(401);
+      const r = await call(m, p, { body: m === "GET" ? undefined : {} });
+      expect(r.status, `${m} ${p}`).toBe(401);
+      // Detailed text for developers, a code for the web app's plain-language message.
+      expect(r.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(r.body.error).toMatch(/sign in/);
     }
   });
 

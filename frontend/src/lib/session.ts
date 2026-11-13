@@ -48,10 +48,10 @@ export async function verifyToken(token: string, fetchImpl: typeof fetch = fetch
   try {
     res = await fetchImpl("/api/protocols", { headers: { authorization: `Bearer ${token.trim()}` } });
   } catch {
-    return { ok: false, reason: "unreachable", message: "Could not reach the Qorvex server. Start it with `npm run demo` or `npm start`, then try again." };
+    return { ok: false, reason: "unreachable", message: "Can't reach Qorvex right now. Check your connection and try again." };
   }
   await res.text().catch(() => undefined); // drain the body so the request completes cleanly
-  if (res.status === 401) return { ok: false, reason: "rejected", message: "This server rejected the token. Use the operator token printed by the server at startup." };
-  if (!res.ok) return { ok: false, reason: "unreachable", message: `The Qorvex server answered HTTP ${res.status}. Check that the backend is running on this origin.` };
+  if (res.status === 401) return { ok: false, reason: "rejected", message: "That operator token isn't right. Check it and try again." };
+  if (!res.ok) return { ok: false, reason: "unreachable", message: "Qorvex isn't responding properly right now. Try again in a minute." };
   return { ok: true };
 }

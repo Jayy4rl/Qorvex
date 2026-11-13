@@ -311,7 +311,7 @@ export function saasRoutes(h: SaasHelpers): Route[] {
           return dec;
         } });
       } catch (e) {
-        throw new HttpError(400, (e as Error).message);
+        throw new HttpError(400, (e as Error).message, { code: "TEMPLATE_INVALID" });
       }
       if (d.store.rule(p.id, draft.id)) draft = { ...draft, id: `${draft.id}-${Math.random().toString(36).slice(2, 6)}` };
       const v = await validateDraft(draft, { rpc: n.rpc, contractId: p.contractId, methods: new Set(), backtest: (r) => h.runBacktest(p, r) as never });
@@ -367,7 +367,7 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       try {
         r.budgets = relayerBudgetTemplate({ dailyNear: typeof b.dailyNear === "string" ? b.dailyNear : undefined, storageDeposits: typeof b.storageDeposits === "number" ? b.storageDeposits : undefined, receivers });
       } catch (e) {
-        throw new HttpError(400, (e as Error).message);
+        throw new HttpError(400, (e as Error).message, { code: "BUDGET_INVALID" });
       }
       r.updatedAt = new Date().toISOString();
       d.store.putRelayer(r);

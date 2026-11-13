@@ -13,12 +13,13 @@ import {
   type TokenMeta,
   type WalletTx,
 } from "@qorvex/shared";
-import { api, ApiError } from "../lib/api";
-import { sendTransactions, withStepUp, WalletError } from "../lib/wallet";
+import { api } from "../lib/api";
+import { sendTransactions, withStepUp } from "../lib/wallet";
 import { useLiveEvents, useThrottled } from "../lib/live";
 import { ago, amount, NEAR_META, pct } from "../lib/format";
 import { Sparkline } from "../components/Sparkline";
 import { LevelBadge } from "./Check";
+import { errorText } from "../lib/errors";
 
 interface DetectionView {
   detection: Detection;
@@ -27,7 +28,7 @@ interface DetectionView {
 }
 type History = Record<string, { blockHeight: number; at: string; ok: boolean; owed?: string; held?: string; marginBps?: number | null; total?: string; max?: string }[]>;
 
-const msg = (e: unknown) => (e instanceof ApiError || e instanceof WalletError ? e.message + (e instanceof ApiError && e.details?.errors ? `: ${e.details.errors.join("; ")}` : "") : String(e));
+const msg = (e: unknown) => errorText(e);
 const TABS = ["setup", "rules", "monitor", "incidents", "proposals", "status"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -386,7 +387,7 @@ function DraftSummary({ run, notes }: { run: DraftRun; notes?: string }) {
         {run.attestation && !run.attestation.error && <span className="pill tiny pill-lime">drafted in an attested enclave</span>}
       </p>
       {notes && <p className="muted small">Model's notes: {notes}</p>}
-      {run.error && <p className="auth-error small">{run.error}</p>}
+      {run.error && <p className="auth-error small">The AI couldn't finish this draft. Try again, or start from a template below.</p>}
       {run.dropped.length > 0 && (
         <details>
           <summary className="small">Why drafts were dropped</summary>
@@ -548,7 +549,7 @@ function HandRule({ protocolId, onDone }: { protocolId: string; onDone: () => vo
     try {
       rule = JSON.parse(text);
     } catch {
-      return setErr("Not valid JSON.");
+      return setErr("That isn't valid JSON. Check the brackets, quotes and commas.");
     }
     try {
       await api(`/api/protocols/${protocolId}/rules`, { body: { rule } });
@@ -712,9 +713,9 @@ function Proposals({ protocolId, health, onChange }: { protocolId: string; healt
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
     setList(await api<any[]>(`/api/protocols/${protocolId}/proposals`));
-    setFw(await api(`/api/protocols/${protocolId}/firewall`).catch((e: Error) => ({ error: e.message })));
+    setFw(await api(`/api/protocols/${protocolId}/firewall`).catch((e: unknown) => ({ error: errorText(e) })));
   }, [protocolId]);
-  useEffect(() => void load().catch((e: Error) => setErr(e.message)), [load]);
+  useEffect(() => void load().catch((e: unknown) => setErr(errorText(e))), [load]);
   const refresh = useThrottled(() => void load().catch(() => {}), 2000);
   useLiveEvents((e) => {
     if (e.protocolId === protocolId && e.type === "proposal") refresh();
