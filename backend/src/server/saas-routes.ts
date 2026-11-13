@@ -113,7 +113,7 @@ export function saasRoutes(h: SaasHelpers): Route[] {
   return [
     // ----------------------------------------------------------- public
     ["POST", /^\/api\/public\/check$/, "public", async (req, res) => {
-      if (!t.rateLimit(`check:${ipOf(req)}`, 20, 10 * 60_000)) throw new HttpError(429, "too many checks from this address; try again in a few minutes");
+      if (!(await t.rateLimit(`check:${ipOf(req)}`, 20, 10 * 60_000))) throw new HttpError(429, "too many checks from this address; try again in a few minutes");
       const { network, contractId } = parseTarget(obj(await body(req), "body"));
       send(res, 200, await contractCheck(network, contractId));
     }],
@@ -121,7 +121,7 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       const network = m[1] as NetworkId;
       const c = t.canonical(network, m[2]);
       // A cached check is served to anyone; a new one counts against the caller's rate limit.
-      if (!c?.detection && !t.rateLimit(`check:${ipOf(req)}`, 20, 10 * 60_000)) throw new HttpError(429, "too many checks from this address");
+      if (!c?.detection && !(await t.rateLimit(`check:${ipOf(req)}`, 20, 10 * 60_000))) throw new HttpError(429, "too many checks from this address");
       send(res, 200, await contractCheck(network, m[2], c?.detection ? 24 * 3600_000 : DETECTION_TTL_MS));
     }],
 
@@ -200,7 +200,7 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       // Pausing also needs the claimer to be the guardian's council for this contract (checked again when the guardian is authorised).
       const council = found.method === "admin-token" ? { council: null, matches: true, checkedAt: new Date().toISOString() } : await councilMatch(n.rpc, n.guardianId, contractId, found.evidence.account).catch(() => undefined);
       const claim = t.putClaim({ workspaceId: ctx.ws, network, contractId, method: found.method, evidence: { ...found.evidence, ...(council ? { council } : {}) }, status: "verified", verifiedAt: new Date().toISOString() });
-      if (council?.matches) t.claimCanonical(network, contractId, ctx.ws);
+      if (council?.matches) await t.claimCanonical(network, contractId, ctx.ws);
       // Start a private watch for this workspace if there is none.
       let watch = d.store.protocols().find((p) => p.network === network && p.contractId === contractId && wsOf(p) === ctx.ws);
       if (!watch) {
@@ -384,7 +384,7 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       const b = obj(await body(req), "body");
       if (typeof b.beneficiary !== "string" || typeof b.action !== "string") throw new HttpError(400, "beneficiary and action are required");
       if (typeof b.cost !== "string" || !/^\d{1,40}$/.test(b.cost)) throw new HttpError(400, "cost must be a yoctoNEAR decimal string");
-      const dec = serverCheck(d.store.db, r, {
+      const dec = await serverCheck(d.store.db, r, {
         beneficiary: b.beneficiary.slice(0, 128),
         action: b.action.slice(0, 64),
         cost: b.cost,

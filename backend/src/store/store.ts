@@ -165,6 +165,11 @@ export class Store {
   flush(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    // Better Auth may be mid-transaction on the shared connection: save a moment later instead.
+    if (this.db.isTransaction) {
+      this.timer = setTimeout(() => this.flush(), 25);
+      return;
+    }
     const now = Date.now();
     const upsert = this.db.prepare(
       "INSERT INTO store_docs (kind, key, workspace_id, doc, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (kind, key) DO UPDATE SET workspace_id = excluded.workspace_id, doc = excluded.doc, updated_at = excluded.updated_at",

@@ -34,29 +34,29 @@ describe("pause gate", () => {
     expect(DEFAULT_WORKSPACE).toBe("default");
   });
 
-  it("refuses a workspace without a verified claim, or with a lapsed one", () => {
+  it("refuses a workspace without a verified claim, or with a lapsed one", async () => {
     const { t, claim } = setup();
     expect(mayPause(t, watch("ws_a")).ok).toBe(false);
     claim("ws_a", true, "lapsed");
-    t.claimCanonical("testnet", "vault.testnet", "ws_a");
+    await t.claimCanonical("testnet", "vault.testnet", "ws_a");
     expect(mayPause(t, watch("ws_a"))).toMatchObject({ ok: false, reason: expect.stringMatching(/lapsed/) });
   });
 
-  it("refuses a verified claim whose account is not the guardian council", () => {
+  it("refuses a verified claim whose account is not the guardian council", async () => {
     const { t, claim } = setup();
     claim("ws_a", false);
-    t.claimCanonical("testnet", "vault.testnet", "ws_a");
+    await t.claimCanonical("testnet", "vault.testnet", "ws_a");
     expect(mayPause(t, watch("ws_a"))).toMatchObject({ ok: false, reason: expect.stringMatching(/guardian council/) });
     claim("ws_a", undefined); // never checked
     expect(mayPause(t, watch("ws_a")).ok).toBe(false);
   });
 
-  it("refuses a council-matching workspace that does not hold the official record", () => {
+  it("refuses a council-matching workspace that does not hold the official record", async () => {
     const { t, claim } = setup();
     claim("ws_a", true);
     claim("ws_b", true);
-    t.claimCanonical("testnet", "vault.testnet", "ws_a");
-    expect(t.claimCanonical("testnet", "vault.testnet", "ws_b")).toBe(false); // the first verified holder keeps it
+    await t.claimCanonical("testnet", "vault.testnet", "ws_a");
+    expect(await t.claimCanonical("testnet", "vault.testnet", "ws_b")).toBe(false); // the first verified holder keeps it
     expect(mayPause(t, watch("ws_a")).ok).toBe(true);
     expect(mayPause(t, watch("ws_b"))).toMatchObject({ ok: false, reason: expect.stringMatching(/official record/) });
   });
@@ -87,5 +87,29 @@ describe("guardian council check", () => {
   it("does not match when the contract is not registered or there is no guardian", async () => {
     expect((await councilMatch(rpc(null), "guardian.testnet", "vault.testnet", "owner.testnet")).matches).toBe(false);
     expect((await councilMatch(rpc({ council: "x" }), undefined, "vault.testnet", "x")).matches).toBe(false);
+  });
+});
+
+describe("shared connection with Better Auth", () => {
+  it("never starts a second transaction while another is open on the connection", async () => {
+    const { openDb, tx, txWhenFree, TxBusyError } = await import("../../src/db/db.ts");
+    const { Store } = await import("../../src/store/store.ts");
+    const os = await import("node:os");
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qorvex-tx-"));
+    const db = openDb(path.join(dir, "q.db"));
+    const store = new Store(dir, db);
+    // Better Auth opens a transaction and awaits slow work (password hashing) inside it.
+    db.exec("BEGIN");
+    store.setWatcherProgress("sandbox", 7, "test"); // schedules a save
+    expect(() => store.flush()).not.toThrow(); // waits instead of crashing
+    expect(() => tx(db, () => 1)).toThrow(TxBusyError);
+    const later = txWhenFree(db, () => "ran after");
+    await new Promise((r) => setTimeout(r, 30));
+    db.exec("COMMIT");
+    expect(await later).toBe("ran after");
+    await new Promise((r) => setTimeout(r, 60));
+    expect((db.prepare("SELECT doc FROM store_docs WHERE kind = 'watcher'").get() as { doc: string }).doc).toContain('"lastBlock":7');
   });
 });

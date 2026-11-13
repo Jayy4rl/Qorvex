@@ -503,7 +503,7 @@ export function createServer(d: ApiDeps): http.Server {
         // An official public page needs verified on-chain authority, re-checked now.
         const claim = await d.reverifyClaim?.(ctx.ws, p.network, p.contractId);
         if (!claim || claim.status !== "verified") throw new HttpError(403, "publishing a status page needs verified on-chain authority over this contract: claim it first");
-        if (!d.tenancy.claimCanonical(p.network, p.contractId, ctx.ws)) throw new HttpError(409, "another workspace holds the verified public page for this contract");
+        if (!(await d.tenancy.claimCanonical(p.network, p.contractId, ctx.ws))) throw new HttpError(409, "another workspace holds the verified public page for this contract");
       }
       p.published = publish;
       d.store.upsertProtocol(p);

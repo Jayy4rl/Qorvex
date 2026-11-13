@@ -35,7 +35,7 @@ export async function reverifyClaim(c: ClaimDeps, workspaceId: string, network: 
     // Keep the last council check if the guardian could not be read this time (RPC trouble is not evidence).
     const council = await councilMatch(rpc, c.guardianFor(network), contractId, claim.evidence.account).catch(() => claim.evidence.council);
     const updated = c.tenancy.putClaim({ ...claim, ...still, evidence: { ...still.evidence, ...(council ? { council } : {}) }, status: "verified", verifiedAt: new Date().toISOString() });
-    if (council?.matches) c.tenancy.claimCanonical(network, contractId, workspaceId);
+    if (council?.matches) await c.tenancy.claimCanonical(network, contractId, workspaceId);
     return updated;
   }
   const lapsed = c.tenancy.putClaim({ ...claim, status: "lapsed" });

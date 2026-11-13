@@ -143,8 +143,21 @@ function migrate(db: Db): void {
   }
 }
 
+/**
+ * Better Auth shares this connection and keeps its transactions open across
+ * async work (e.g. password hashing during sign-up). A second BEGIN on the
+ * same connection would fail, so callers must not start one while
+ * `db.isTransaction` is true: `tx` refuses, `txWhenFree` waits.
+ */
+export class TxBusyError extends Error {
+  constructor() {
+    super("another transaction is open on this database connection");
+  }
+}
+
 /** Run `fn` in one transaction (BEGIN IMMEDIATE, so concurrent writers queue instead of failing). */
 export function tx<T>(db: Db, fn: () => T): T {
+  if (db.isTransaction) throw new TxBusyError();
   db.exec("BEGIN IMMEDIATE");
   try {
     const out = fn();
@@ -154,4 +167,14 @@ export function tx<T>(db: Db, fn: () => T): T {
     db.exec("ROLLBACK");
     throw e;
   }
+}
+
+/** `tx`, after waiting (without blocking the event loop) for any open transaction on the connection to finish. */
+export async function txWhenFree<T>(db: Db, fn: () => T, timeoutMs = 10_000): Promise<T> {
+  const start = Date.now();
+  while (db.isTransaction) {
+    if (Date.now() - start > timeoutMs) throw new TxBusyError();
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  return tx(db, fn);
 }

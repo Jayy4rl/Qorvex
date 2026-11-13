@@ -9,15 +9,15 @@
  */
 import crypto from "node:crypto";
 import type { Decision, ProposalPolicy, Relayer } from "@qorvex/shared";
-import { tx, type Db } from "../db/db.ts";
+import { txWhenFree, type Db } from "../db/db.ts";
 import { decide, type CheckRequest } from "./budgets.ts";
 import { evaluateProposal, type SputnikProposal } from "../firewall/policy.ts";
 
 /** Longest budget window the validator allows (30 days); older spend rows are pruned. */
 const MAX_WINDOW_MS = 30 * 86_400_000;
 
-export function serverCheck(db: Db, relayer: Relayer, req: CheckRequest, now = Date.now()): Decision {
-  return tx(db, () => {
+export function serverCheck(db: Db, relayer: Relayer, req: CheckRequest, now = Date.now()): Promise<Decision> {
+  return txWhenFree(db, () => {
     const longest = Math.max(1, ...relayer.budgets.map((b) => b.window_sec)) * 1000;
     const rows = db
       .prepare("SELECT at, beneficiary, action, receiver, cost FROM relayer_spend WHERE relayer_id = ? AND beneficiary = ? AND at >= ?")

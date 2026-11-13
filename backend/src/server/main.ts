@@ -84,7 +84,7 @@ export async function startQorvex(o: StartOptions): Promise<Qorvex> {
     log,
     extraOrigins: (env("QORVEX_TRUSTED_ORIGINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
     onNearSignIn: async (userId, accountKey) => {
-      const joined = tenancy.acceptNearInvites(userId, accountKey);
+      const joined = await tenancy.acceptNearInvites(userId, accountKey);
       if (joined.length) log(`NEAR invite accepted: ${accountKey} joined ${joined.join(", ")}`);
     },
   });

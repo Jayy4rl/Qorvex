@@ -5,7 +5,7 @@
  */
 import crypto from "node:crypto";
 import type { AuthorityClaim, Detection, NetworkId, WorkspaceRole } from "@qorvex/shared";
-import { tx, type Db } from "../db/db.ts";
+import { txWhenFree, type Db } from "../db/db.ts";
 
 /** Records created before multi-tenancy, and everything the single-tenant admin token touches. */
 export const DEFAULT_WORKSPACE = "default";
@@ -76,8 +76,8 @@ export class Tenancy {
   }
 
   /** The canonical public record goes to the first workspace with verified authority; later ones keep their private watch. */
-  claimCanonical(network: NetworkId, contractId: string, workspaceId: string): boolean {
-    return tx(this.db, () => {
+  claimCanonical(network: NetworkId, contractId: string, workspaceId: string): Promise<boolean> {
+    return txWhenFree(this.db, () => {
       const c = this.canonical(network, contractId);
       if (!c) {
         this.db.prepare("INSERT INTO canonical_contracts (id, network, contract_id, claimed_by_workspace, created_at) VALUES (?, ?, ?, ?, ?)").run(id("cc"), network, contractId, workspaceId, Date.now());
@@ -123,8 +123,8 @@ export class Tenancy {
   }
 
   /** Attach a user to every workspace that invited this NEAR account (matched on first sign-in). */
-  acceptNearInvites(userId: string, accountKey: string): string[] {
-    return tx(this.db, () => {
+  acceptNearInvites(userId: string, accountKey: string): Promise<string[]> {
+    return txWhenFree(this.db, () => {
       const rows = this.db.prepare("SELECT * FROM near_invites WHERE account_id = ? AND accepted_at IS NULL AND expires_at > ?").all(accountKey, Date.now()) as any[];
       const joined: string[] = [];
       for (const r of rows) {
@@ -141,9 +141,9 @@ export class Tenancy {
   // --------------------------------------------------------- rate limits
 
   /** Fixed-window counter; true while under `max` requests per `windowMs`. */
-  rateLimit(key: string, max: number, windowMs: number): boolean {
+  rateLimit(key: string, max: number, windowMs: number): Promise<boolean> {
     const now = Date.now();
-    return tx(this.db, () => {
+    return txWhenFree(this.db, () => {
       const r = this.db.prepare("SELECT window_start, count FROM rate_limits WHERE key = ?").get(key) as { window_start: number; count: number } | undefined;
       if (!r || now - r.window_start >= windowMs) {
         this.db.prepare("INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1) ON CONFLICT (key) DO UPDATE SET window_start = excluded.window_start, count = 1").run(key, now);
