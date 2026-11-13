@@ -16,7 +16,7 @@ import {
 import { api } from "../lib/api";
 import { sendTransactions, withStepUp } from "../lib/wallet";
 import { useLiveEvents, useThrottled } from "../lib/live";
-import { ago, amount, NEAR_META, pct } from "../lib/format";
+import { ago, amount, NEAR_META, pct, yoctoToNear } from "../lib/format";
 import { Sparkline } from "../components/Sparkline";
 import { LevelBadge } from "./Check";
 import { errorText } from "../lib/errors";
@@ -107,7 +107,7 @@ export default function ContractPage() {
       {tab === "rules" && <Rules detail={detail} templates={view.templates} health={health} tokens={tokens} onChange={loadDetail} />}
       {tab === "monitor" && <Monitor protocolId={p.id} detail={detail} />}
       {tab === "incidents" && <Incidents detail={detail} />}
-      {tab === "proposals" && <Proposals protocolId={p.id} health={health} onChange={loadAll} />}
+      {tab === "proposals" && <Proposals protocolId={p.id} network={p.network} health={health} onChange={loadAll} />}
       {tab === "status" && <StatusAndAuthority detail={detail} view={view} onChange={loadAll} />}
     </div>
   );
@@ -707,10 +707,11 @@ function Incidents({ detail }: { detail: ProtocolDetail }) {
 
 // -------------------------------------------------------------- proposals
 
-function Proposals({ protocolId, health, onChange }: { protocolId: string; health: Health | null; onChange: () => void }) {
+function Proposals({ protocolId, network, health, onChange }: { protocolId: string; network: string; health: Health | null; onChange: () => void }) {
   const [list, setList] = useState<any[] | null>(null);
   const [fw, setFw] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const load = useCallback(async () => {
     setList(await api<any[]>(`/api/protocols/${protocolId}/proposals`));
     setFw(await api(`/api/protocols/${protocolId}/firewall`).catch((e: unknown) => ({ error: errorText(e) })));
@@ -739,6 +740,7 @@ function Proposals({ protocolId, health, onChange }: { protocolId: string; healt
         ) : fw ? (
           <>
             <p className="muted small">{fw.explains}</p>
+            {fw.walletTx && <p className="muted small">A council member proposes it from their wallet, attaching the DAO's proposal bond ({yoctoToNear(fw.proposalBond)} NEAR); the council then approves it in the DAO.</p>}
             <p className="small">
               Firewall account <span className="mono">{fw.firewallAccount}</span> · reject key {fw.keyLoaded ? "loaded" : "not loaded"}
             </p>
@@ -746,6 +748,11 @@ function Proposals({ protocolId, health, onChange }: { protocolId: string; healt
               {fw.demoSigning && health?.demo && (
                 <button className="btn btn-sm btn-primary" onClick={act(() => api(`/api/protocols/${protocolId}/firewall/sign-demo`, { body: {} }))}>
                   Propose and approve with the sandbox council
+                </button>
+              )}
+              {fw.walletTx && (network === "testnet" || network === "mainnet") && (
+                <button className="btn btn-sm btn-primary" onClick={act(async () => (await sendTransactions(network, [fw.walletTx]), setNote("Proposal submitted. Once your council approves it in the DAO, press Read back and verify.")))}>
+                  Propose with my wallet
                 </button>
               )}
               <button className="btn btn-sm btn-secondary" onClick={act(() => api(`/api/protocols/${protocolId}/firewall/verify`, { body: {} }))}>
@@ -779,6 +786,7 @@ function Proposals({ protocolId, health, onChange }: { protocolId: string; healt
           ))}
         </div>
       )}
+      {note && <p className="small">{note}</p>}
       {err && <p className="auth-error">{err}</p>}
     </div>
   );

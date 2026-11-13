@@ -430,7 +430,20 @@ export function createServer(d: ApiDeps): http.Server {
       if (!n.firewallAccount) throw new HttpError(409, `no firewall account configured for ${p.network} (QORVEX_${p.network.toUpperCase()}_FIREWALL_ACCOUNT)`);
       const role = firewallRole(n.firewallAccount);
       const proposal = { description: "Add the Qorvex proposal firewall: it can only vote to reject transfer and function-call proposals that break the DAO's Qorvex policy. It cannot approve anything. Remove it with a policy proposal.", kind: { ChangePolicyAddOrUpdateRole: { role } } };
+      // The proposal bond comes from the DAO's own policy; a council member's wallet attaches it.
+      let proposalBond: string | null = null;
+      try {
+        proposalBond = String((await n.rpc.view<any>(p.contractId, "get_policy", {})).value?.proposal_bond ?? "") || null;
+      } catch {
+        proposalBond = null;
+      }
+      const walletTx = proposalBond
+        ? { receiverId: p.contractId, explain: "Propose adding the Qorvex reject-only role to the DAO policy. The council then approves the proposal in the DAO.", actions: [{ type: "FunctionCall", params: { methodName: "add_proposal", args: { proposal }, gas: "100000000000000", deposit: proposalBond } }] }
+        : null;
       send(res, 200, {
+        proposalBond,
+        walletTx,
+        sharedKey: n.rejecters.shared,
         dao: p.contractId,
         firewallAccount: n.firewallAccount,
         keyLoaded: n.rejecters.has(p.contractId),
@@ -461,7 +474,10 @@ export function createServer(d: ApiDeps): http.Server {
           const k = await n.rpc.viewAccessKey(n.firewallAccount, ex.publicKey);
           const fc = k.result.permission?.FunctionCall;
           result.firewallKeyPermission = k.result.permission;
-          result.firewallKeyScopeOk = !!fc && fc.receiver_id === p.contractId && JSON.stringify(fc.method_names) === JSON.stringify(["act_proposal"]);
+          result.firewallKeyShared = n.rejecters.shared;
+          // A per-DAO key must be limited to act_proposal on this DAO. A shared key serves every
+          // DAO, so its limit is the DAO's own policy (checked above): a role that can only reject.
+          result.firewallKeyScopeOk = n.rejecters.shared || (!!fc && fc.receiver_id === p.contractId && JSON.stringify(fc.method_names) === JSON.stringify(["act_proposal"]));
           if (!result.firewallKeyScopeOk) v.problems.push("firewall key is not limited to act_proposal on this DAO");
         } catch (e) {
           v.problems.push(`cannot read the firewall key: ${(e as Error).message.slice(0, 120)}`);

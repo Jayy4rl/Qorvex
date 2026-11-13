@@ -105,7 +105,7 @@ Requires Node.js 22 or newer. The first run downloads the NEAR sandbox binary (a
 
 | Suite | Command | Result |
 |---|---|---|
-| Backend unit + frontend + build | `npm run check` | 98 + 32 tests pass |
+| Backend unit + frontend + build | `npm run check` | 99 + 32 tests pass |
 | End-to-end on a local NEAR sandbox | `npm run test:e2e` | 16 tests pass |
 | Contracts (needs Rust) | `npm run test:contracts` | 48 tests pass (guardian 28, qorvex-guard 13, demo ledger 7) |
 
@@ -147,6 +147,10 @@ Then approve rules (alert only, or alert + auto-pause) and publish the status pa
 
 **A gas relayer or sponsor**
 
+```bash
+npm install @qorvex/relayer-sdk
+```
+
 ```ts
 import { Qorvex } from "@qorvex/relayer-sdk";
 
@@ -157,7 +161,7 @@ if (!d.allow) return refuse(d.reason);   // e.g. "count cap: 10 storage_deposit 
 await signAndSend();
 ```
 
-Budgets live on the server, so every instance of your relayer shares one spend history. If Qorvex is unreachable, `check()` refuses, unless you choose to allow small amounts up to a local cap. Installation is described in [`sdk/README.md`](sdk/README.md).
+Budgets live on the server, so every instance of your relayer shares one spend history. If Qorvex is unreachable, `check()` refuses, unless you choose to allow small amounts up to a local cap. More in [`sdk/README.md`](sdk/README.md) and on [npm](https://www.npmjs.com/package/@qorvex/relayer-sdk).
 
 ## Why NEAR
 

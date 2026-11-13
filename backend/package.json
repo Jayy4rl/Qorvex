@@ -19,7 +19,8 @@
     "deploy:testnet": "tsx scripts/deploy-testnet.ts",
     "firewall:replay": "tsx scripts/firewall-replay.ts",
     "replay:testnet": "tsx scripts/testnet-replay.ts",
-    "finish:testnet": "tsx scripts/finish-testnet.ts"
+    "finish:testnet": "tsx scripts/finish-testnet.ts",
+    "firewall:testnet": "tsx scripts/firewall-testnet.ts"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.22",

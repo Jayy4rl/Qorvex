@@ -97,3 +97,27 @@ describe("verifying the DAO gave Qorvex reject-only power", () => {
     expect(verifyFirewallPolicy(base, "fw.near").ok).toBe(false);
   });
 });
+
+describe("firewall key pool", () => {
+  it("serves any DAO from one shared key, and only listed DAOs from per-DAO keys", async () => {
+    const { generateKey } = await import("near-kit");
+    const { RejectExecutor, RejecterPool } = await import("../../src/firewall/executor.ts");
+    const k = generateKey();
+    const make = (dao: string) => new RejectExecutor(["http://127.0.0.1:9"], "testnet", { accountId: "firewall.testnet", secretKey: k.secretKey }, dao);
+
+    const shared = new RejecterPool(make);
+    expect(shared.shared).toBe(true);
+    expect(shared.has("any.sputnik-dao.testnet")).toBe(true);
+    const a = shared.get("a.sputnik-dao.testnet")!;
+    expect(a.daoId).toBe("a.sputnik-dao.testnet");
+    expect(a.publicKey).toBe(k.publicKey.toString());
+    expect(shared.get("a.sputnik-dao.testnet")).toBe(a); // made once, then reused
+
+    const perDao = new RejecterPool();
+    perDao.set("listed.sputnik-dao.testnet", make("listed.sputnik-dao.testnet"));
+    expect(perDao.shared).toBe(false);
+    expect(perDao.has("listed.sputnik-dao.testnet")).toBe(true);
+    expect(perDao.has("other.sputnik-dao.testnet")).toBe(false);
+    expect(perDao.get("other.sputnik-dao.testnet")).toBeUndefined();
+  });
+});

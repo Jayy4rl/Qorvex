@@ -18,7 +18,7 @@ import { NearRpc } from "../near/rpc.ts";
 import { NeardataSource } from "../stream/neardata.ts";
 import { RpcFollowSource } from "../stream/rpc-follow.ts";
 import { PauseExecutor } from "../executor/pause.ts";
-import { RejectExecutor } from "../firewall/executor.ts";
+import { RejectExecutor, RejecterPool } from "../firewall/executor.ts";
 import { Watcher } from "../watcher/watcher.ts";
 import type { Store } from "../store/store.ts";
 import type { Alerter } from "../alerts/alerts.ts";
@@ -35,7 +35,7 @@ export interface NetworkRuntime {
   /** Pause executors by guardian id (at most one: this network's guardian). */
   executors: Map<string, PauseExecutor>;
   /** Firewall reject-vote executors by DAO id. */
-  rejecters: Map<string, RejectExecutor>;
+  rejecters: RejecterPool;
   firewallAccount?: string;
   watcher: Watcher;
   watcherAccount?: string;
@@ -76,9 +76,12 @@ export function networkRuntime(id: NetworkId, o: RuntimeOptions, overrides: { rp
     watcherPublicKey = ex.publicKey;
   }
 
-  const rejecters = new Map<string, RejectExecutor>();
   const firewallAccount = env(`QORVEX_${NET}_FIREWALL_ACCOUNT`);
   const firewallKeys = env(`QORVEX_${NET}_FIREWALL_KEYS`);
+  const sharedFirewallKey = env(`QORVEX_${NET}_FIREWALL_KEY`);
+  const rejecters = new RejecterPool(
+    firewallAccount && sharedFirewallKey ? (dao) => new RejectExecutor(rpcUrls, nearNetworkId, { accountId: firewallAccount, secretKey: sharedFirewallKey }, dao) : undefined,
+  );
   if (firewallAccount && firewallKeys) {
     let map: Record<string, string>;
     try {

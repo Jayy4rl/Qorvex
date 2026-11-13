@@ -69,3 +69,32 @@ export class RejectExecutor {
     }
   }
 }
+
+/**
+ * Reject-vote executors by DAO id. With per-DAO keys (QORVEX_<NET>_FIREWALL_KEYS) each DAO
+ * has its own function-call key limited to act_proposal on that DAO. With one shared key
+ * (QORVEX_<NET>_FIREWALL_KEY) an executor is made on demand for any DAO, so a DAO can
+ * enable the firewall without the operator editing the server. Either way the vote can only
+ * reject: each DAO's own policy gives the firewall account a role holding nothing but
+ * VoteReject, which verification reads back before the console reports it as protected.
+ */
+export class RejecterPool extends Map<string, RejectExecutor> {
+  constructor(private readonly make?: (daoId: string) => RejectExecutor) {
+    super();
+  }
+  /** True when one key serves every DAO (no per-DAO scope to check on the key itself). */
+  get shared(): boolean {
+    return !!this.make;
+  }
+  override get(daoId: string): RejectExecutor | undefined {
+    let ex = super.get(daoId);
+    if (!ex && this.make) {
+      ex = this.make(daoId);
+      super.set(daoId, ex);
+    }
+    return ex;
+  }
+  override has(daoId: string): boolean {
+    return super.has(daoId) || !!this.make;
+  }
+}

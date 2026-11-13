@@ -2,11 +2,8 @@
 
 Spending limits for NEAR gas relayers and payout services. Ask Qorvex before you sign; it answers from budgets you set in the Qorvex console, against one spend history shared by every instance of your relayer.
 
-Build it from this repository and install the package file into your relayer's project:
-
 ```sh
-cd sdk && npm run build && npm pack          # writes qorvex-relayer-sdk-0.1.0.tgz
-cd /path/to/your-relayer && npm install /path/to/Qorvex/sdk/qorvex-relayer-sdk-0.1.0.tgz
+npm install @qorvex/relayer-sdk
 ```
 
 ```ts
