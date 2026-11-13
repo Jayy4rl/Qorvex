@@ -20,12 +20,21 @@ NEAR cross-contract calls are asynchronous, so a contract cannot check its real 
 | Layer | Component | Where |
 | --- | --- | --- |
 | Prevent | `qorvex-guard` Rust crate: per-token per-window outflow caps, plus a **self-accounting check that pauses the contract in the same transaction** | [contracts/qorvex-guard](contracts/qorvex-guard/src/lib.rs) |
-| Prevent | Relayer SDK `check(beneficiary, action, cost)` with budgets pulled from the console | [backend/src/relayer/sdk.ts](backend/src/relayer/sdk.ts) |
+| Prevent | Relayer SDK `check(beneficiary, action, cost)`: decided on the server against one shared spend history, with budgets set in the console | [sdk/](sdk/), [backend/src/relayer/server-check.ts](backend/src/relayer/server-check.ts) |
 | Detect and stop | Watcher that streams blocks (neardata.xyz, or RPC on the sandbox), evaluates rules on every receipt touching a protected contract, confirms with a direct read, then pauses | [backend/src/watcher/watcher.ts](backend/src/watcher/watcher.ts) |
 | Detect and stop | Guardian contract: the only thing Qorvex's key can call. It records each pause on-chain (rule, evidence hash, watcher) and forwards `pause()` | [contracts/guardian](contracts/guardian/src/lib.rs) |
-| AI | Drafts rules with `qwen/qwen3.5-397b-a17b` on NEAR AI Cloud, from source, ABI, methods, live state and recent receipts. Every draft is validated and backtested before a human sees it. Explains breaches with `Qwen/Qwen3.6-35B-A3B-FP8` after the pause lands. Both are open-weight and set by one environment variable each. | [backend/src/ai](backend/src/ai) |
-| Verify | Public status page. Every number links to the exact RPC request and raw response, with a `curl` to reproduce it. | [frontend/src/pages/public](frontend/src/pages/public) |
-| Operate | Operator console (React + Vite): assets, policies, authority, incidents, relayers, sandbox simulations | [frontend/](frontend/) |
+| AI | Drafts rules with `Qwen/Qwen3.8-27B` on NEAR AI Cloud (larger Qwen and GLM models as fallbacks), from source, ABI, methods, live state and recent receipts. Every draft is validated and backtested before a human sees it. Explains breaches with `Qwen/Qwen3.6-35B-A3B-FP8` after the pause lands. Both are open-weight and set by one environment variable each. | [backend/src/ai](backend/src/ai) |
+| Verify | Public status page: a short security summary (confirmed / failed / absent / unavailable / unknown, with block numbers), every value backed by the exact RPC request and response with a `curl`; the guardian registration is read by the visitor's own browser | [frontend/src/pages/StatusPage.tsx](frontend/src/pages/StatusPage.tsx) |
+| Operate | Multi-tenant console (React + Vite): sign in with a NEAR wallet or email, workspaces and roles, contract check and claim, rules (AI drafts, templates), monitor, incidents with recovery steps, relayers, team, sandbox simulations | [frontend/](frontend/) |
+
+## Hosted demo
+
+**https://qorvexbackend-production.up.railway.app** (NEAR testnet; kept up through judging).
+
+- **No account:** open **Get started** (the contract check), keep `testnet`, enter `ledger.proudrobe4711.testnet` and press **Check**. You see that it embeds qorvex-guard, that it is registered with the Qorvex guardian (level 3), who controls it, and every read-only probe behind that.
+- **Sign up** with an email (or a testnet wallet), name a workspace, and look around: **Overview**, **Contracts**, **Relayers** (create one and set a budget), **Team** (invite someone and copy the invite link).
+- The testnet contracts deployed for the demo: guardian `guardian.proudrobe4711.testnet`, ledger `ledger.proudrobe4711.testnet`, demo token `usdc.proudrobe4711.testnet`.
+- The full exploit replays (Intents ghost balance, Trezu drain, DAO firewall) run in the local sandbox demo below, because they need accounts the demo controls.
 
 ## Try it (no keys, no testnet funds)
 
@@ -158,8 +167,9 @@ The local sandbox demo (`npm run demo`) does not run on Railway: it needs the ne
 
 ## AI and recorded responses (A1, A2, A9)
 
-- **Models:** inference runs on NEAR AI Cloud (`https://cloud-api.near.ai/v1`) at temperature 0, with open-weight Qwen models that the live catalog marks verifiable (served in TEEs). Drafting uses `qwen/qwen3.5-397b-a17b`, the largest Qwen there (128k context, enough for source + ABI). Explanations use `Qwen/Qwen3.6-35B-A3B-FP8`, a small, fast MoE. The PRD's example IDs (Qwen3.5-122B-A10B, Qwen3-30B-A3B-Instruct) are not in the catalog (checked 2026-11-10 at `/v1/model/list`). Each model is one environment variable (`QORVEX_DRAFT_MODEL`, `QORVEX_EXPLAIN_MODEL`); `z-ai/glm-5.3` is a drop-in open-weight alternative for drafting.
-- **Replay mode** (the default) answers only from fixtures in [backend/fixtures/ai](backend/fixtures/ai). A missing fixture is an error, never a made-up answer. The demo then adds the same rules by hand and says so in its output.
+- **Models:** inference runs on NEAR AI Cloud (`https://cloud-api.near.ai/v1`) at temperature 0, with open-weight Qwen models that the live catalog marks verifiable (served in TEEs). Drafting uses `Qwen/Qwen3.8-27B` (262k context); `qwen/qwen3.5-397b-a17b` answered HTTP 429 on every try on 2026-11-10 and is a fallback with `z-ai/glm-5.3`. Explanations use `Qwen/Qwen3.6-35B-A3B-FP8`, a small, fast MoE. The PRD's example IDs (Qwen3.5-122B-A10B, Qwen3-30B-A3B-Instruct) are not in the catalog (checked 2026-11-10 at `/v1/model/list`). Each model is one environment variable (`QORVEX_DRAFT_MODEL`, `QORVEX_EXPLAIN_MODEL`); `z-ai/glm-5.3` is a drop-in open-weight alternative for drafting.
+- **Replay mode** (the default) answers only from fixtures in [backend/fixtures/ai](backend/fixtures/ai): 7 responses recorded from live NEAR AI Cloud calls on 2026-11-10. A missing fixture is an error, never a made-up answer; the console then suggests a template or a hand-written rule.
+- **Known issue:** breach explanations are looked up by rule id, and the demo ledger and vault both use `solvency-usdc`, so in replay mode the ledger incident shows the explanation recorded for the vault (it says the contract paused itself). Live mode is not affected; the fix is to add the contract to the replay key and re-record.
 - **Recording fixtures:** set `NEARAI_API_KEY` and run `QORVEX_AI_MODE=record npm run demo -- --auto --exit`. Fixtures are keyed by job, model, contract, code hash, source digest and attempt.
 - **Attestation (A8):** with a live key, each drafting run stores the model's TEE attestation report (`/v1/attestation/report`) and the chat signature. The console then shows a "drafted in an attested enclave" badge. Qorvex stores the report but does not itself verify the NVIDIA NRAS / Intel TDX chain.
 
@@ -173,10 +183,10 @@ The local sandbox demo (`npm run demo`) does not run on Railway: it needs the ne
 | D2 | Solvency and outflow-rate done. Sponsor spend is covered by relayer budgets. Treasury-transfer policy: not built. |
 | D3, D4, D5, D6 | Done. Telegram and webhook implemented; webhook is tested, Telegram has not been tested against the live API. Phone push and PagerDuty not built. |
 | G1, G2, G3, G4 | Done, unit and e2e tested |
-| A1 to A6 | Done. The full pipeline is tested with recorded/stub model output; **no live NEAR AI call has been made yet** (no API key in this environment). |
+| A1 to A6 | Done. Recorded from live NEAR AI Cloud calls and replayed in tests and the demo. |
 | A7 | Done; runs after the pause lands |
-| A8 | Stored and shown; not independently verified |
-| A9 | Mechanism done. **Fixtures still need recording with an API key.** |
+| A8 | Stored and shown with live drafting; not independently verified |
+| A9 | Done: 7 recorded responses in `backend/fixtures/ai` (see the known issue above) |
 | S1, S2 | Done |
 | S3, L1, L2 | Not built (future work) |
 
@@ -185,16 +195,17 @@ The local sandbox demo (`npm run demo`) does not run on Railway: it needs the ne
 - **Pause latency:** the watcher takes 4 blocks on the sandbox, against the 3-block target (see above). Testnet has not been measured yet.
 - **One process:** the store is one SQLite file and the working set is held in memory, so run one Qorvex server process. Relayer checks are shared across any number of relayer instances (they are decided on the server); the older in-process `QorvexRelayerGuard` in `backend/src/relayer/sdk.ts` still keeps history per process and is kept for the local demo.
 - **Sampled backtests:** solvency backtests sample block heights, not every block. Outflow backtests replay only recent blocks.
-- **Wallet signing:** the console shows the guardian-authorisation transaction and a near-cli-rs command. In-browser wallet signing (near-connect) is not wired up; the sandbox demo signs with the demo owner key.
+- **Wallet signing:** NEAR Connect signs sign-in messages, step-up confirmations, guardian authorisations and recovery transactions on testnet and mainnet. Wallets cannot sign for the local sandbox, so the sandbox demo signs with the demo owner key.
+- **Email:** no email provider is configured; invitations give a link to share, and password-reset emails are written to the server log.
 - **Free neardata.xyz tier:** it rate-limits full mainnet block documents (observed HTTP 429). The stream backs off, and a 30-second heartbeat keeps read-only pages evaluated. For per-block mainnet streaming, set `FASTNEAR_API_KEY`, switch to `QORVEX_<NET>_STREAM=rpc` (block + chunk following over the RPC list), or run a NEAR Indexer node.
 - **Block source:** NEAR Lake (AWS S3) is deprecated and no longer indexes new blocks, so Qorvex does not use it. The watcher streams from Neardata (`mainnet.neardata.xyz` / `testnet.neardata.xyz`), which docs.near.org now recommends for hosted block data, or follows blocks and chunks over RPC (`QORVEX_<NET>_STREAM=rpc`, and always on the sandbox). The docs recommend a NEAR Indexer node when latency is critical; that is the path to the 3-block pause target.
-- **Pause-state check:** it reads an `is_paused` view. Contracts without one are assumed not paused.
+- **Pause-state check:** it reads an `is_paused` view. For contracts without one the pause state is shown as unavailable, never as running.
 - **The demo ledger is vulnerable on purpose:** never deploy it with real funds.
 
 ## Libraries, prior work and AI use (Q-005)
 
 - **Started in the hackathon window:** all code was written from scratch on 2026-11-10. There is no pre-hackathon baseline.
-- **Libraries:** near-sdk 5.29 and near-contract-standards (Rust); near-kit 0.20.2 (TypeScript signing and sandbox) for the backend, whose HTTP server, RPC client and rule engine are plain Node.js; React 19, react-router 7 and TanStack Query 5 for the frontend, built with Vite; vitest, tsx and TypeScript for development.
+- **Libraries:** near-sdk 5.29 and near-contract-standards (Rust); near-kit 0.20.2 (TypeScript signing, NEP-413 verification and sandbox); Better Auth 1.7.22 with its organization and API-key plugins (sessions, workspaces, keys) on Node's built-in `node:sqlite`; the HTTP server, RPC client and rule engine are plain Node.js. Frontend: React 19 and react-router 7, built with Vite; NEAR Connect (`@hot-labs/near-connect`, HOT) for wallets. vitest, tsx and TypeScript for development.
 - **AI code:** the code was written with an AI coding assistant (Claude Code) from the team's PRD, and reviewed and tested as described above.
 
 ## License
