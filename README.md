@@ -105,7 +105,7 @@ Requires Node.js 22 or newer. The first run downloads the NEAR sandbox binary (a
 
 | Suite | Command | Result |
 |---|---|---|
-| Backend unit + frontend + build | `npm run check` | 99 + 32 tests pass |
+| Backend unit + frontend + build | `npm run check` | 103 + 32 tests pass |
 | End-to-end on a local NEAR sandbox | `npm run test:e2e` | 16 tests pass |
 | Contracts (needs Rust) | `npm run test:contracts` | 48 tests pass (guardian 28, qorvex-guard 13, demo ledger 7) |
 
@@ -136,6 +136,7 @@ Paste your contract ID into the app first. It reads the chain and tells you whic
 | Uses **near-plugins `Pausable`** | No code change. Sign two transactions from the console: grant the guardian the pause role (`acl_grant_role`), then register with the guardian (0.05 NEAR storage) |
 | Is new or upgradable | Add the [`qorvex-guard`](contracts/qorvex-guard) crate and call its hooks on deposits, credits and withdrawals, then call `set_guardian` once. You also get per-token outflow caps, and the contract pauses itself inside the same transaction if its own books break. [`contracts/demo-ledger`](contracts/demo-ledger/src/lib.rs) is a worked example |
 | Is owned by a DAO | The console turns the same calls into one DAO proposal for the council to approve |
+| Has its own pause method | Sign one transaction as the contract account that registers the method with the guardian; the method must accept calls from the guardian |
 | Has no pause method | Qorvex watches and alerts, with a ready-to-sign pause transaction in every alert |
 
 Then approve rules (alert only, or alert + auto-pause) and publish the status page.
@@ -210,7 +211,7 @@ The hosted app is one Railway service built from the [`Dockerfile`](Dockerfile),
 
 - **Pause speed:** 4 blocks (about 3 s) from the breaking block to the pause, measured on the local sandbox. The target is 3 blocks, which needs a NEAR Indexer node instead of polling the block stream.
 - **Single server:** one watcher per network serves all workspaces.
-- **Alerts:** Telegram and webhook destinations are set per server.
+- **Alerts:** each workspace sets its own Telegram chat and signed webhook (Team page); webhooks must be public https addresses.
 - **Email:** invitations are shared as links.
 - **Next:** several watchers that must agree before pausing, watchers running in a TEE, an embeddable status badge, billing.
 

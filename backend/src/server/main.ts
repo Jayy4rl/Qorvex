@@ -16,7 +16,7 @@ import { Store } from "../store/store.ts";
 import { NearAiClient } from "../ai/client.ts";
 import { explainBreach, type TokenUnits } from "../ai/explain.ts";
 import { cachedTokenMeta } from "../near/tokens.ts";
-import { Alerter, channelsFromEnv, type AlertChannel } from "../alerts/alerts.ts";
+import { Alerter, channelsFromEnv, type AlertChannel, workspaceAlertChannels } from "../alerts/alerts.ts";
 import { networkRuntime, type NetworkRuntime } from "./runtime.ts";
 import { createServer, type ApiDeps } from "./api.ts";
 import { openDb } from "../db/db.ts";
@@ -58,6 +58,7 @@ export async function startQorvex(o: StartOptions): Promise<Qorvex> {
   const tenancy = new Tenancy(db);
   const ai = new NearAiClient(aiConfig());
   const alerter = new Alerter([...channelsFromEnv(), ...(o.extraAlertChannels ?? [])]);
+  alerter.workspaceChannels = (ws) => workspaceAlertChannels(tenancy.alertSettings(ws));
   const publicUrl = o.publicUrl ?? `http://localhost:${o.port}`;
   const runtimes = new Map<NetworkId, NetworkRuntime>();
   for (const id of o.networks) {
@@ -107,7 +108,7 @@ export async function startQorvex(o: StartOptions): Promise<Qorvex> {
     tenancy,
     rpcFor,
     guardianFor: (n) => runtimes.get(n)?.guardianId,
-    onLapse: (c, why) => void alerter.send(`Authority lapsed: ${c.contractId}`, `${why}. Automatic pause is off for this workspace until authority is verified again; monitoring continues.`, { claimId: c.id }),
+    onLapse: (c, why) => void alerter.send(`Authority lapsed: ${c.contractId}`, `${why}. Automatic pause is off for this workspace until authority is verified again; monitoring continues.`, { claimId: c.id }, c.workspaceId),
   };
   // Re-verify every claim from chain state every 6 hours (and lapse the ones that no longer hold).
   const claimTimer = setInterval(() => void reverifyAll(claimDeps).catch((e) => log(`claim re-verification failed: ${(e as Error).message}`)), 6 * 3600_000);

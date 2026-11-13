@@ -28,6 +28,7 @@ export const ACTIONS = {
   "status.publish": { roles: ["owner", "admin"], onchain: true },
   "contract.claim": { roles: ["owner", "admin"], stepUp: true },
   "relayer.manage": { roles: ["owner", "admin"] },
+  "alerts.manage": { roles: ["owner", "admin"] },
   "apikey.create": { roles: ["owner", "admin"], stepUp: true },
   "member.invite": { roles: ["owner", "admin"] },
   "workspace.delete": { roles: ["owner"] },

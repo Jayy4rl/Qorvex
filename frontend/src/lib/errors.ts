@@ -95,8 +95,9 @@ export function describeError(e: unknown): Described {
   if (e instanceof ApiError) {
     const details = Array.isArray(e.details?.errors) ? (e.details.errors as string[]).map(friendlyDetail) : undefined;
     // Server messages that already speak to the person and carry the specifics (which field, how many fires, what to sign with).
-    if (e.code === "TEMPLATE_INVALID" || (e.code === "BAD_REQUEST" && e.status === 400 && /^(token|window|view arguments|max actions|"[^"]+" is not an amount)/.test(e.message)))
+    if (e.code === "TEMPLATE_INVALID" || (e.code === "BAD_REQUEST" && e.status === 400 && /^(token|window|view arguments|max actions|"[^"]+" is not an amount|telegram|the webhook|this server has no telegram|pause method|pause arguments)/i.test(e.message)))
       return { message: capitalise(e.message) + ".", details };
+    if (e.status === 409 && /^(the guardian registers|no alert channel)/.test(e.message)) return { message: capitalise(e.message) + "." };
     if (e.code === "NOT_CONTROLLER" && e.details?.hint) return { message: `${MESSAGES.NOT_CONTROLLER} ${e.details.hint}`, details };
     if (e.code && MESSAGES[e.code]) return { message: MESSAGES[e.code], details };
     if (e.status === 0) return { message: "Can't reach Qorvex right now. Check your connection and try again." };

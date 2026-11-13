@@ -39,6 +39,18 @@ import { cachedTokenMeta } from "../near/tokens.ts";
 import { serverCheck, serverCheckProposal } from "../relayer/server-check.ts";
 import type { NetworkRuntime } from "./runtime.ts";
 import { newId } from "../store/store.ts";
+import crypto from "node:crypto";
+import { env } from "../config.ts";
+import { assertPublicWebhookUrl } from "../alerts/alerts.ts";
+import type { WorkspaceAlertRow } from "../tenancy/tenancy.ts";
+
+function alertView(row: WorkspaceAlertRow | undefined) {
+  return {
+    serverBot: !!env("TELEGRAM_BOT_TOKEN"),
+    telegram: row?.telegram_chat_id ? { chatId: row.telegram_chat_id, ownBot: !!row.telegram_bot_token } : null,
+    webhook: row?.webhook_url ? { url: row.webhook_url, secretSet: !!row.webhook_secret } : null,
+  };
+}
 
 export interface SaasHelpers {
   d: ApiDeps;
@@ -239,6 +251,37 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       const txs = authorisationTxs(det, n.guardianId, { daoBond });
       send(res, 200, { detection: det, claim: claim ?? null, guardianId: n.guardianId, network: p.network, transactions: txs, signer: det.recommended.signer, viaDao: det.recommended.viaDao });
     }],
+    // Contracts with their own pause method: the contract account registers the method with the
+    // guardian (register_custom_target). The guardian takes the caller as the target, so this is
+    // only offered when the claim was signed by the contract account itself.
+    ["POST", /^\/api\/protocols\/([\w-]+)\/authorise\/custom$/, "guardian.authorise", async (req, res, m, _u, ctx) => {
+      const p = getProtocol(m[1], ctx);
+      const n = net(p.network);
+      if (!n.guardianId) throw new HttpError(409, `no guardian is configured for ${p.network}`);
+      const claim = await requireAuthority(ctx, p);
+      if (ctx.p.kind !== "admin" && claim?.method !== "contract-account")
+        throw new HttpError(409, `the guardian registers whichever account sends this, so it must be signed by ${p.contractId} itself: claim the contract with that account first`);
+      const b = obj(await body(req), "body");
+      const method = String(b.method ?? "").trim();
+      if (!/^[A-Za-z0-9_]{1,64}$/.test(method)) throw new HttpError(400, "pause method must be a method name like pause or set_paused");
+      const argsTemplate = typeof b.argsTemplate === "string" && b.argsTemplate.trim() ? b.argsTemplate.trim() : "{}";
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(argsTemplate);
+      } catch {
+        throw new HttpError(400, "pause arguments must be JSON, for example {} or {\"paused\": true}");
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new HttpError(400, "pause arguments must be a JSON object, for example {}");
+      if (argsTemplate.length > 512) throw new HttpError(400, "pause arguments must be at most 512 characters");
+      const council = claim?.evidence.account ?? p.contractId;
+      const tx = {
+        receiverId: n.guardianId,
+        explain: `Register ${p.contractId}'s own ${method} method with the Qorvex guardian (0.05 NEAR storage). On a confirmed breach the guardian calls ${p.contractId}.${method}(${argsTemplate}); your contract must accept that call from ${n.guardianId}.`,
+        actions: [{ type: "FunctionCall" as const, params: { methodName: "register_custom_target", args: { council, method, args_template: argsTemplate, scopes: ["ALL"] }, gas: "30000000000000", deposit: "50000000000000000000000" } }],
+      };
+      audit(ctx, "guardian.custom-method", `${p.network}:${p.contractId}`, { method, argsTemplate });
+      send(res, 200, { transactions: [tx], signer: p.contractId, guardianId: n.guardianId, network: p.network });
+    }],
     ["POST", /^\/api\/protocols\/([\w-]+)\/authorise\/verify$/, "contract.watch", async (_q, res, m, _u, ctx) => {
       const p = getProtocol(m[1], ctx);
       const det = await fresh(p.network, p.contractId, 0);
@@ -363,6 +406,60 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       send(res, 201, { id, note: `${accountId} joins as ${role} the first time it signs in with its wallet (valid 48 hours).` });
     }],
     ["GET", /^\/api\/audit$/, "dashboard.read", async (_q, res, _m, _u, ctx) => send(res, 200, t.auditLog(ctx.ws))],
+
+    // ----------------------------------------------------------- alerts
+    // Each workspace's own Telegram chat and webhook. Secrets (bot token, webhook secret) are
+    // write-only: the API says whether one is set, never what it is.
+    ["GET", /^\/api\/alerts$/, "dashboard.read", async (_q, res, _m, _u, ctx) => send(res, 200, alertView(t.alertSettings(ctx.ws)))],
+    ["PUT", /^\/api\/alerts$/, "alerts.manage", async (req, res, _m, _u, ctx) => {
+      const b = obj(await body(req), "body");
+      const cur = t.alertSettings(ctx.ws);
+      const next = {
+        telegram_chat_id: cur?.telegram_chat_id ?? null,
+        telegram_bot_token: cur?.telegram_bot_token ?? null,
+        webhook_url: cur?.webhook_url ?? null,
+        webhook_secret: cur?.webhook_secret ?? null,
+        updated_by: ctx.p.kind === "session" ? `user:${ctx.p.userId}` : "operator",
+      };
+      let newSecret: string | undefined;
+      if ("telegram" in b) {
+        if (b.telegram === null) Object.assign(next, { telegram_chat_id: null, telegram_bot_token: null });
+        else {
+          const tg = obj(b.telegram, "telegram");
+          const chat = String(tg.chatId ?? "").trim();
+          if (!/^(-?\d{3,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/.test(chat)) throw new HttpError(400, "telegram chat ID must be a number like -1001234567890 or a channel name like @mychannel");
+          const token = typeof tg.botToken === "string" ? tg.botToken.trim() : "";
+          if (token && !/^\d{5,12}:[A-Za-z0-9_-]{30,50}$/.test(token)) throw new HttpError(400, "telegram bot token should look like 123456789:AA... (from @BotFather)");
+          if (!token && !next.telegram_bot_token && !env("TELEGRAM_BOT_TOKEN")) throw new HttpError(400, "this server has no Telegram bot: add your own bot token from @BotFather");
+          next.telegram_chat_id = chat;
+          if (token) next.telegram_bot_token = token;
+        }
+      }
+      if ("webhook" in b) {
+        if (b.webhook === null) Object.assign(next, { webhook_url: null, webhook_secret: null });
+        else {
+          const url = String(obj(b.webhook, "webhook").url ?? "").trim();
+          try {
+            await assertPublicWebhookUrl(url);
+          } catch (e) {
+            throw new HttpError(400, (e as Error).message);
+          }
+          if (url !== next.webhook_url || !next.webhook_secret) {
+            newSecret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
+            next.webhook_secret = newSecret;
+          }
+          next.webhook_url = url;
+        }
+      }
+      t.putAlertSettings(ctx.ws, next);
+      audit(ctx, "alerts.update", ctx.ws, { telegram: !!next.telegram_chat_id, ownBot: !!next.telegram_bot_token, webhook: next.webhook_url ? new URL(next.webhook_url).host : null });
+      send(res, 200, { ...alertView(t.alertSettings(ctx.ws)), ...(newSecret ? { webhookSecret: newSecret } : {}) });
+    }],
+    ["POST", /^\/api\/alerts\/test$/, "alerts.manage", async (_q, res, _m, _u, ctx) => {
+      const results = await d.alerter.test(ctx.ws);
+      if (!results.length) throw new HttpError(409, "no alert channel is set for this workspace yet");
+      send(res, 200, { results });
+    }],
 
     // --------------------------------------------------------- relayers
     ["PUT", /^\/api\/relayers\/([\w-]+)\/template$/, "relayer.manage", async (req, res, m, _u, ctx) => {

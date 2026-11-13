@@ -121,6 +121,23 @@ const MIGRATIONS: { id: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    id: 3,
+    name: "workspace alert channels",
+    sql: `
+      -- Each workspace's own alert destinations, set in the console. Bot tokens and webhook
+      -- secrets are never returned by the API.
+      CREATE TABLE workspace_alerts (
+        workspace_id TEXT PRIMARY KEY,
+        telegram_chat_id TEXT,
+        telegram_bot_token TEXT,
+        webhook_url TEXT,
+        webhook_secret TEXT,
+        updated_at INTEGER NOT NULL,
+        updated_by TEXT
+      );
+    `,
+  },
 ];
 
 export function openDb(file: string): Db {

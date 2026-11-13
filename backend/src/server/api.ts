@@ -686,7 +686,7 @@ export async function maybeAlertRefusals(d: ApiDeps, relayerId: string, name: st
     if (n >= 5 && now - (refusalAlerted.get(k) ?? 0) > 10 * 60_000) {
       refusalAlerted.set(k, now);
       const last = recent.filter((x) => x.beneficiary === ben).at(-1);
-      await d.alerter.send(`Relayer ${name}: repeated refusals`, `Relayer ${name} refused ${n} sponsored actions for ${ben} in the last minute. Last reason: ${last?.reason}. Review the log and keep or raise the limit.`, { relayerId, beneficiary: ben, count: n });
+      await d.alerter.send(`Relayer ${name}: repeated refusals`, `Relayer ${name} refused ${n} sponsored actions for ${ben} in the last minute. Last reason: ${last?.reason}. Review the log and keep or raise the limit.`, { relayerId, beneficiary: ben, count: n }, wsOf(d.store.relayer(relayerId) ?? {}));
     }
   }
 }

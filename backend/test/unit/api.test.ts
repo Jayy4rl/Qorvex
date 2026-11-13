@@ -334,6 +334,31 @@ describe("workspaces", () => {
     alice = fresh;
   });
 
+  it("keeps each workspace's alert channels to itself and never returns their secrets", async () => {
+    const put = (body: object, cookie = alice) => call("PUT", "/api/alerts", { cookie, body });
+    expect((await put({ webhook: { url: "https://127.0.0.1/hook" } })).body.error).toMatch(/public internet/);
+    expect((await put({ webhook: { url: "https://10.0.0.5/hook" } })).body.error).toMatch(/public internet/);
+    expect((await put({ webhook: { url: "http://93.184.216.34/hook" } })).body.error).toMatch(/https/);
+    const ok = await put({ webhook: { url: "https://93.184.216.34/hook" } });
+    expect(ok.status).toBe(200);
+    expect(ok.body.webhookSecret).toMatch(/^whsec_[0-9a-f]{48}$/);
+    const tokenish = "123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-ab";
+    expect((await put({ telegram: { chatId: "not a chat" } })).status).toBe(400);
+    expect((await put({ telegram: { chatId: "-1001234567890", botToken: tokenish } })).status).toBe(200);
+    const view = await call("GET", "/api/alerts", { cookie: alice });
+    expect(view.body.webhook).toEqual({ url: "https://93.184.216.34/hook", secretSet: true });
+    expect(view.body.telegram).toEqual({ chatId: "-1001234567890", ownBot: true });
+    expect(JSON.stringify(view.body)).not.toContain(ok.body.webhookSecret);
+    expect(JSON.stringify(view.body)).not.toContain(tokenish);
+    // Bob's workspace has none of it.
+    const bobs = await call("GET", "/api/alerts", { cookie: bob });
+    expect(bobs.body.webhook).toBeNull();
+    expect(bobs.body.telegram).toBeNull();
+    // Clearing works; the test endpoint then has nothing to send to.
+    expect((await put({ telegram: null, webhook: null })).body.telegram).toBeNull();
+    expect((await call("POST", "/api/alerts/test", { cookie: alice, body: {} })).status).toBe(409);
+  });
+
   it("explains a cross-site refusal", async () => {
     const r = await call("POST", "/api/relayers", { cookie: alice, headers: { origin: "https://evil.example" }, body: { name: "x" } });
     expect(r.body.error).toMatch(/evil\.example.*public address is http:\/\/127\.0\.0\.1/);

@@ -191,8 +191,14 @@ function Authorise({ protocolId, network, canSign, detection, sandboxDemo, onDon
   const [state, setState] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   if (detection.level >= 2) return <p className="muted">The guardian is registered ({detection.guardianRegistration?.adapter}, scopes {detection.guardianRegistration?.scopes.join(", ")}).</p>;
-  if (detection.recommended.path === "watch-only" || detection.recommended.path === "dao-firewall")
-    return <p className="muted">No automatic pause path for this contract: Qorvex watches and alerts.{detection.recommended.path === "dao-firewall" && " See the Proposals tab for the DAO firewall."}</p>;
+  if (detection.recommended.path === "dao-firewall") return <p className="muted">No automatic pause path for this contract: Qorvex watches and alerts. See the Proposals tab for the DAO firewall.</p>;
+  if (detection.recommended.path === "watch-only")
+    return (
+      <div className="stack">
+        <p className="muted">No standard pause was recognised, so Qorvex watches and alerts.</p>
+        {canSign && (network === "testnet" || network === "mainnet") && <CustomPause protocolId={protocolId} network={network} contractId={detection.contractId} onDone={onDone} />}
+      </div>
+    );
   if (!canSign && !sandboxDemo) return <p className="muted">Verify control first.</p>;
   const verify = async () => {
     const r = await api<{ ok: boolean; level: number }>(`/api/protocols/${protocolId}/authorise/verify`, { body: {} });
@@ -246,6 +252,76 @@ function Authorise({ protocolId, network, canSign, detection, sandboxDemo, onDon
               })}
             >
               Sign in my wallet{detection.recommended.signer ? ` as ${detection.recommended.viaDao ? "a council member" : detection.recommended.signer}` : ""}
+            </button>
+            <button className="btn btn-secondary" onClick={run(verify)}>
+              Verify on-chain
+            </button>
+          </div>
+        </>
+      )}
+      {state && <p className="small">{state}</p>}
+      {err && <p className="auth-error">{err}</p>}
+    </div>
+  );
+}
+
+/** A contract with its own pause method registers that method with the guardian (signed by the contract account). */
+function CustomPause({ protocolId, network, contractId, onDone }: { protocolId: string; network: "testnet" | "mainnet"; contractId: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [method, setMethod] = useState("pause");
+  const [args, setArgs] = useState("{}");
+  const [txs, setTxs] = useState<WalletTx[] | null>(null);
+  const [state, setState] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const run = (fn: () => Promise<void>) => async () => {
+    setErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setState(null);
+      setErr(msg(e));
+    }
+  };
+  const verify = async () => {
+    const r = await api<{ ok: boolean; level: number }>(`/api/protocols/${protocolId}/authorise/verify`, { body: {} });
+    setState(r.ok ? `Confirmed on-chain: level ${r.level}.` : "The guardian registration is not on-chain yet.");
+    if (r.ok) onDone();
+  };
+  if (!open)
+    return (
+      <button className="btn btn-sm btn-secondary" onClick={() => setOpen(true)}>
+        My contract has its own pause method
+      </button>
+    );
+  return (
+    <div className="stack">
+      <p className="small">
+        The guardian will call this method on <span className="mono">{contractId}</span> when a rule breaks. Your contract must accept that call from the Qorvex guardian. Arguments may use{" "}
+        <span className="mono">{"{rule_id}"}</span>, <span className="mono">{"{evidence_hash}"}</span> and <span className="mono">{"{scope}"}</span>.
+      </p>
+      <div className="row">
+        <input className="auth-input mono slim" value={method} onChange={(e) => (setMethod(e.target.value), setTxs(null))} aria-label="Pause method" placeholder="pause" />
+        <input className="auth-input mono grow" value={args} onChange={(e) => (setArgs(e.target.value), setTxs(null))} aria-label="Pause arguments (JSON)" placeholder="{}" />
+      </div>
+      {!txs && (
+        <button className="btn btn-primary" onClick={run(async () => setTxs((await api<{ transactions: WalletTx[] }>(`/api/protocols/${protocolId}/authorise/custom`, { body: { method: method.trim(), argsTemplate: args.trim() } })).transactions))}>
+          Show what I will sign
+        </button>
+      )}
+      {txs && (
+        <>
+          <TxList txs={txs} />
+          <div className="row">
+            <button
+              className="btn btn-primary"
+              onClick={run(async () => {
+                setState("Waiting for the wallet…");
+                await sendTransactions(network, txs);
+                setState("Sent. Verifying on-chain…");
+                await verify();
+              })}
+            >
+              Sign in my wallet as {contractId}
             </button>
             <button className="btn btn-secondary" onClick={run(verify)}>
               Verify on-chain

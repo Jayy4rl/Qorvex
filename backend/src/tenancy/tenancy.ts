@@ -10,6 +10,17 @@ import { txWhenFree, type Db } from "../db/db.ts";
 /** Records created before multi-tenancy, and everything the single-tenant admin token touches. */
 export const DEFAULT_WORKSPACE = "default";
 
+export interface WorkspaceAlertRow {
+  workspace_id: string;
+  telegram_chat_id: string | null;
+  /** The workspace's own bot; null uses the server's bot (TELEGRAM_BOT_TOKEN). */
+  telegram_bot_token: string | null;
+  webhook_url: string | null;
+  webhook_secret: string | null;
+  updated_at: number;
+  updated_by: string | null;
+}
+
 const id = (p: string) => `${p}_${crypto.randomBytes(8).toString("hex")}`;
 
 export class Tenancy {
@@ -26,6 +37,24 @@ export class Tenancy {
     return this.db
       .prepare("SELECT o.id AS id, o.name AS name, o.slug AS slug, m.role AS role FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = ? ORDER BY o.createdAt")
       .all(userId) as { id: string; name: string; slug: string; role: WorkspaceRole }[];
+  }
+
+  // ------------------------------------------------------------- alerts
+
+  /** A workspace's own alert destinations, with the secrets (bot token, webhook secret) left in. */
+  alertSettings(workspaceId: string): WorkspaceAlertRow | undefined {
+    return this.db.prepare("SELECT * FROM workspace_alerts WHERE workspace_id = ?").get(workspaceId) as WorkspaceAlertRow | undefined;
+  }
+
+  putAlertSettings(workspaceId: string, v: Omit<WorkspaceAlertRow, "workspace_id" | "updated_at">): void {
+    this.db
+      .prepare(
+        `INSERT INTO workspace_alerts (workspace_id, telegram_chat_id, telegram_bot_token, webhook_url, webhook_secret, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(workspace_id) DO UPDATE SET telegram_chat_id = excluded.telegram_chat_id, telegram_bot_token = excluded.telegram_bot_token,
+           webhook_url = excluded.webhook_url, webhook_secret = excluded.webhook_secret, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      )
+      .run(workspaceId, v.telegram_chat_id, v.telegram_bot_token, v.webhook_url, v.webhook_secret, Date.now(), v.updated_by);
   }
 
   // ------------------------------------------------------------- claims

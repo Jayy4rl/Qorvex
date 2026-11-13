@@ -357,7 +357,7 @@ export class Watcher {
   private async report(p: Protocol, breach: Breach, o: { alertExplanation: boolean }): Promise<void> {
     this.d.store.putBreach(breach);
     const msg = breachMessage(breach, this.d.statusUrl?.(p.id));
-    breach.alerts = await this.d.alerter.send(msg.subject, msg.text, breach);
+    breach.alerts = await this.d.alerter.send(msg.subject, msg.text, breach, p.workspaceId ?? "default");
     this.d.store.putBreach(breach);
     if (!this.d.explain) return;
     this.d
@@ -366,7 +366,7 @@ export class Watcher {
         if (!x) return;
         breach.explanation = x;
         this.d.store.putBreach(breach);
-        if (o.alertExplanation) return this.d.alerter.send(`Explanation: ${breach.ruleId}`, `AI explanation (${x.model}) for ${breach.ruleId}:\n${x.text}`, { breachId: breach.id });
+        if (o.alertExplanation) return this.d.alerter.send(`Explanation: ${breach.ruleId}`, `AI explanation (${x.model}) for ${breach.ruleId}:\n${x.text}`, { breachId: breach.id }, p.workspaceId ?? "default");
       })
       .catch((e) => this.log(`explanation of ${breach.id} failed: ${(e as Error).message}`));
   }

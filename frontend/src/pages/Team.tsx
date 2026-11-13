@@ -55,7 +55,7 @@ interface AuditRow {
 const isPlaceholder = (email: string) => email.endsWith(".placeholder.invalid");
 const displayEmail = (email: string) => (isPlaceholder(email) ? "signed in with a NEAR wallet" : email);
 
-/** Team & access: who is in the workspace, what they can do, API keys and the audit log. */
+/** Team & access: who is in the workspace, what they can do, API keys, alerts and the audit log. */
 export default function Team({ who }: { who: Me }) {
   useTitle("Team");
   if (who.kind !== "user" || !who.workspace) {
@@ -78,6 +78,7 @@ export default function Team({ who }: { who: Me }) {
       </div>
       <Members workspaceId={ws.id} myUserId={who.user!.id} myRole={ws.role} canManage={canManage} />
       {canManage && <ApiKeys who={who} />}
+      <Alerts canManage={canManage} />
       <AuditLog workspaceId={ws.id} />
     </div>
   );
@@ -347,6 +348,135 @@ function ApiKeys({ who }: { who: Me }) {
   );
 }
 
+// -------------------------------------------------------------------- alerts
+
+interface AlertSettings {
+  serverBot: boolean;
+  telegram: { chatId: string; ownBot: boolean } | null;
+  webhook: { url: string; secretSet: boolean } | null;
+}
+
+/** Where this workspace's incidents go: its own Telegram chat and/or a signed webhook. */
+function Alerts({ canManage }: { canManage: boolean }) {
+  const [cfg, setCfg] = useState<AlertSettings | null>(null);
+  const [chatId, setChatId] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [hook, setHook] = useState("");
+  const [secret, setSecret] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const show = (c: AlertSettings) => {
+    setCfg(c);
+    setChatId(c.telegram?.chatId ?? "");
+    setHook(c.webhook?.url ?? "");
+    setBotToken("");
+  };
+  useEffect(() => {
+    api<AlertSettings>("/api/alerts")
+      .then(show)
+      .catch((e: unknown) => setMsg({ ok: false, text: errorText(e) }));
+  }, []);
+  const save = (body: object, done: string) => async (e?: FormEvent) => {
+    e?.preventDefault();
+    setMsg(null);
+    setSecret(null);
+    setBusy(true);
+    try {
+      const out = await api<AlertSettings & { webhookSecret?: string }>("/api/alerts", { method: "PUT", body });
+      show(out);
+      if (out.webhookSecret) setSecret(out.webhookSecret);
+      setMsg({ ok: true, text: done });
+    } catch (x) {
+      setMsg({ ok: false, text: errorText(x) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const test = async () => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const out = await api<{ results: { channel: string; ok: boolean; error?: string }[] }>("/api/alerts/test", { body: {} });
+      const bad = out.results.filter((r) => !r.ok);
+      setMsg(bad.length ? { ok: false, text: `Not delivered to ${bad.map((r) => r.channel).join(" and ")}. Check the chat ID, that the bot is in the chat, or that the webhook answers with a 2xx.` } : { ok: true, text: `Test alert sent to ${out.results.map((r) => r.channel).join(" and ")}.` });
+    } catch (x) {
+      setMsg({ ok: false, text: errorText(x) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!cfg) return null;
+  return (
+    <div className="card panel">
+      <h2 className="h-small">Alerts</h2>
+      <p className="muted small">Incidents on this workspace's contracts and relayers are sent here, and only here, the moment they happen.</p>
+      {!canManage && (
+        <p className="small">
+          Telegram: {cfg.telegram ? <span className="mono">{cfg.telegram.chatId}</span> : "not set"} · Webhook: {cfg.webhook ? <span className="mono">{cfg.webhook.url}</span> : "not set"}
+        </p>
+      )}
+      {canManage && (
+        <>
+          <form className="invite" onSubmit={save({ telegram: { chatId: chatId.trim(), ...(botToken.trim() ? { botToken: botToken.trim() } : {}) } }, "Telegram saved.")}>
+            <input className="auth-input mono grow" placeholder="Telegram chat ID, e.g. -1001234567890" value={chatId} onChange={(e) => setChatId(e.target.value)} required aria-label="Telegram chat ID" />
+            <input
+              className="auth-input mono grow"
+              type="password"
+              autoComplete="off"
+              placeholder={cfg.telegram?.ownBot ? "Bot token saved (enter a new one to replace it)" : cfg.serverBot ? "Your own bot token (optional)" : "Bot token from @BotFather"}
+              value={botToken}
+              onChange={(e) => setBotToken(e.target.value)}
+              aria-label="Telegram bot token"
+            />
+            <button className="btn btn-sm btn-primary" disabled={busy}>
+              Save Telegram
+            </button>
+            {cfg.telegram && (
+              <button type="button" className="text-link small" onClick={() => void save({ telegram: null }, "Telegram removed.")()}>
+                Remove
+              </button>
+            )}
+            <p className="faint small wide">
+              {cfg.serverBot
+                ? "Add Qorvex's bot to your group, or use your own bot from @BotFather. "
+                : "Create a bot with @BotFather, add it to your group, and paste its token. "}
+              The token is stored on the server and never shown again.
+            </p>
+          </form>
+          <form className="invite" onSubmit={save({ webhook: { url: hook.trim() } }, "Webhook saved.")}>
+            <input className="auth-input mono grow" type="url" placeholder="https://your-service.example/qorvex" value={hook} onChange={(e) => setHook(e.target.value)} required aria-label="Webhook URL" />
+            <button className="btn btn-sm btn-primary" disabled={busy}>
+              Save webhook
+            </button>
+            {cfg.webhook && (
+              <button type="button" className="text-link small" onClick={() => void save({ webhook: null }, "Webhook removed.")()}>
+                Remove
+              </button>
+            )}
+            <p className="faint small wide">Each alert is a JSON POST signed with HMAC-SHA256 in the x-qorvex-signature header.</p>
+          </form>
+          {secret && (
+            <div className="small ok">
+              <p>
+                Webhook signing secret. It is shown <b>only once</b>: store it where your service can check signatures.
+              </p>
+              <pre className="code-pre">{secret}</pre>
+            </div>
+          )}
+          {(cfg.telegram || cfg.webhook) && (
+            <div className="row">
+              <button className="btn btn-sm btn-secondary" onClick={test} disabled={busy}>
+                Send test alert
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {msg && <p className={msg.ok ? "small ok" : "auth-error small"}>{msg.text}</p>}
+    </div>
+  );
+}
+
 // ----------------------------------------------------------------- audit log
 
 const ACTION_TEXT: Record<string, string> = {
@@ -364,6 +494,7 @@ const ACTION_TEXT: Record<string, string> = {
   "apikey.create": "created an API key",
   "apikey.revoke": "revoked an API key",
   "member.invite": "invited a NEAR account",
+  "alerts.update": "changed where alerts are sent",
 };
 
 function AuditLog({ workspaceId }: { workspaceId: string }) {
