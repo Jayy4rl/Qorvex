@@ -323,6 +323,17 @@ describe("workspaces", () => {
     expect((await call("GET", "/api/me", { token: ADMIN })).body.kind).toBe("admin");
   });
 
+  it("keeps the workspace after signing out and back in (a new session has no active workspace)", async () => {
+    await call("POST", "/api/auth/sign-out", { cookie: alice, body: {} });
+    const res = await fetch(`${base}/api/auth/sign-in/email`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "alice@example.com", password: "a long enough password" }) });
+    expect(res.status).toBe(200);
+    const fresh = res.headers.get("set-cookie")!.split(";")[0];
+    const me = await call("GET", "/api/me", { cookie: fresh });
+    expect(me.body.workspace?.id).toBe(aliceWs);
+    expect((await call("GET", "/api/protocols", { cookie: fresh })).body.map((p: Protocol) => p.id)).toEqual(["prt_alice"]);
+    alice = fresh;
+  });
+
   it("explains a cross-site refusal", async () => {
     const r = await call("POST", "/api/relayers", { cookie: alice, headers: { origin: "https://evil.example" }, body: { name: "x" } });
     expect(r.body.error).toMatch(/evil\.example.*public address is http:\/\/127\.0\.0\.1/);

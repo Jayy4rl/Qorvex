@@ -105,7 +105,7 @@ Requires Node.js 22 or newer. The first run downloads the NEAR sandbox binary (a
 
 | Suite | Command | Result |
 |---|---|---|
-| Backend unit + frontend + build | `npm run check` | 97 + 32 tests pass |
+| Backend unit + frontend + build | `npm run check` | 98 + 32 tests pass |
 | End-to-end on a local NEAR sandbox | `npm run test:e2e` | 16 tests pass |
 | Contracts (needs Rust) | `npm run test:contracts` | 48 tests pass (guardian 28, qorvex-guard 13, demo ledger 7) |
 

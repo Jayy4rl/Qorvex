@@ -57,8 +57,15 @@ export async function resolvePrincipal(d: PrincipalDeps, req: http.IncomingMessa
   const s = await d.auth.auth.api.getSession({ headers: fromNodeHeaders(req.headers) }).catch(() => null);
   if (!s) return { kind: "anonymous" };
   const asked = typeof req.headers["x-qorvex-workspace"] === "string" ? req.headers["x-qorvex-workspace"] : null;
-  const ws = asked ?? (s.session as { activeOrganizationId?: string | null }).activeOrganizationId ?? null;
-  const role = ws ? d.tenancy.roleOf(s.user.id, ws) : undefined;
+  const chosen = asked ?? (s.session as { activeOrganizationId?: string | null }).activeOrganizationId ?? null;
+  let ws = chosen;
+  let role = ws ? d.tenancy.roleOf(s.user.id, ws) : undefined;
+  // A new session (every sign-in) starts with no active workspace. Unless one was asked for
+  // explicitly, fall back to the user's first workspace instead of treating them as having none.
+  if (!role && !asked) {
+    const first = d.tenancy.workspacesOf(s.user.id)[0];
+    if (first) ({ id: ws, role } = first);
+  }
   return { kind: "session", userId: s.user.id, name: s.user.name, email: s.user.email, workspaceId: role ? ws : null, role };
 }
 
