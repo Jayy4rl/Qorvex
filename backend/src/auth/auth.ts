@@ -43,6 +43,7 @@ export interface AuthConfig {
   email: EmailSender;
   /** Other origins allowed to call the API with cookies (e.g. the Vite dev server). */
   extraOrigins?: string[];
+  log?: (s: string) => void;
   onNearSignIn?: NearAuthOptions["onSignedIn"];
 }
 
@@ -83,7 +84,7 @@ export function createAuth(c: AuthConfig) {
   const origin = new URL(c.publicUrl).origin;
   const recipient = new URL(c.publicUrl).host;
   const trusted = trustedOriginsFor(c.publicUrl, c.extraOrigins);
-  const nearOptions: NearAuthOptions = { db: c.db, recipient, origin, rpcFor: c.rpcFor, onSignedIn: c.onNearSignIn };
+  const nearOptions: NearAuthOptions = { db: c.db, recipient, origin, trustedOrigins: trustedOriginsFor(c.publicUrl, c.extraOrigins), rpcFor: c.rpcFor, onSignedIn: c.onNearSignIn, log: c.log };
   const options = {
     appName: "Qorvex",
     baseURL: origin,

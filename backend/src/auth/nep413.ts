@@ -25,17 +25,49 @@ export interface Nep413Expected {
   /** 32 bytes. */
   nonce: Uint8Array;
   callbackUrl?: string | null;
+  /**
+   * Other callbackUrls a wallet may have put into the signed payload on its own
+   * (some sign the page address even when none was requested). Only addresses
+   * of this app are passed here; they do not change what the signature proves.
+   */
+  extraCallbackUrls?: string[];
+}
+
+/**
+ * Signature encodings wallets return: base64 (NEP-413), "ed25519:<base58>", or
+ * bare base58. near-kit reads bare base58 as base64, so it is also tried prefixed.
+ */
+function signatureVariants(sig: string): string[] {
+  const out = [sig];
+  if (!sig.includes(":") && /^[1-9A-HJ-NP-Za-km-z]+$/.test(sig)) out.push(`ed25519:${sig}`);
+  return out;
+}
+
+export interface VerifyReport {
+  ok: boolean;
+  /** For logs and developer details only (never secret: signatures and public keys are public). */
+  tried: { callbackUrl: string | null; signatureFormat: string }[];
 }
 
 /** True when the signature verifies over the expected payload, with or without the callbackUrl. */
 export async function verifyNep413(signed: SignedNep413, expected: Nep413Expected): Promise<boolean> {
+  return (await verifyNep413Report(signed, expected)).ok;
+}
+
+export async function verifyNep413Report(signed: SignedNep413, expected: Nep413Expected): Promise<VerifyReport> {
   const base = { message: expected.message, recipient: expected.recipient, nonce: expected.nonce };
-  const variants = expected.callbackUrl ? [{ ...base, callbackUrl: expected.callbackUrl }, base] : [base];
-  for (const params of variants) {
-    // The server issued and consumed the nonce itself, so near-kit's timestamp-nonce check is off.
-    if (await verifyNep413Signature(signed, params, { nonceValidation: "none" })) return true;
+  const callbacks = [...new Set([expected.callbackUrl ?? null, null, ...(expected.extraCallbackUrls ?? [])])];
+  const tried: VerifyReport["tried"] = [];
+  for (const sig of signatureVariants(signed.signature)) {
+    const format = sig.startsWith("ed25519:") ? (signed.signature.startsWith("ed25519:") ? "prefixed base58" : "bare base58") : "base64";
+    for (const cb of callbacks) {
+      tried.push({ callbackUrl: cb, signatureFormat: format });
+      const params = cb ? { ...base, callbackUrl: cb } : base;
+      // The server issued and consumed the nonce itself, so near-kit's timestamp-nonce check is off.
+      if (await verifyNep413Signature({ ...signed, signature: sig }, params, { nonceValidation: "none" })) return { ok: true, tried };
+    }
   }
-  return false;
+  return { ok: false, tried };
 }
 
 export type KeyCheck = "full-access" | "function-call" | "missing" | "rpc-down";

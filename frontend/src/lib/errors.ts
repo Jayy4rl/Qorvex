@@ -54,7 +54,7 @@ const MESSAGES: Record<string, string> = {
   DEMO_ONLY: "This only works in the local demo.",
   // Wallet sign-in (NEAR plugin)
   NEAR_NONCE: "That sign-in request expired. Try again.",
-  NEAR_SIGNATURE: "The wallet's signature didn't match this sign-in request. Try again.",
+  NEAR_SIGNATURE: "Your wallet's signature didn't match this request. Try again; if it keeps happening, try another wallet.",
   NEAR_KEY: "Your wallet signed with a limited key. NEAR sign-in needs a full-access key: use a wallet that holds one, or sign in with email.",
   NEAR_RPC: "Couldn't reach the NEAR network to check your wallet. Nothing was changed; try again in a moment.",
   NEAR_ACCOUNT: "That NEAR account isn't linked to your Qorvex account. Link it first.",

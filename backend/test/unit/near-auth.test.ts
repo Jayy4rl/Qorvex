@@ -133,6 +133,26 @@ describe("NEAR sign-in", () => {
     expect((await post("/near/nonce", { network: "testnet", purpose: "step-up", action: "x", target: "y" })).status).toBe(401);
   });
 
+  it("accepts wallets that sign the page address as callbackUrl, or return bare base58 signatures", async () => {
+    const { base58, base64 } = await import("@scure/base");
+    // A wallet that adds the dapp page as callbackUrl on its own.
+    const page = "http://127.0.0.1:9/c/testnet/vault.testnet?x=1";
+    const n = (await post("/near/nonce", { network: "testnet", purpose: "sign-in" })).body;
+    const s = sign(key, n, n.recipient, page);
+    expect((await post("/near/verify", { nonce: n.nonce, accountId: "alice.testnet", publicKey: s.publicKey, signature: s.signature, pageUrl: page })).status).toBe(200);
+    // The same wallet, but a page address from another site is not accepted as a variant.
+    const n2 = (await post("/near/nonce", { network: "testnet", purpose: "sign-in" })).body;
+    const s2 = sign(key, n2, n2.recipient, "https://evil.example/x");
+    const bad = await post("/near/verify", { nonce: n2.nonce, accountId: "alice.testnet", publicKey: s2.publicKey, signature: s2.signature, pageUrl: "https://evil.example/x" });
+    expect(bad.status).toBe(401);
+    expect(bad.body.code).toBe("NEAR_SIGNATURE");
+    // A wallet returning the signature as bare base58.
+    const n3 = (await post("/near/nonce", { network: "testnet", purpose: "sign-in" })).body;
+    const s3 = sign(key, n3);
+    const raw = s3.signature.startsWith("ed25519:") ? base58.decode(s3.signature.slice(8)) : base64.decode(s3.signature);
+    expect((await post("/near/verify", { nonce: n3.nonce, accountId: "alice.testnet", publicKey: s3.publicKey, signature: base58.encode(raw) })).status).toBe(200);
+  });
+
   it("verifyNep413 checks the message bytes", async () => {
     const nonce = new Uint8Array(32).fill(7);
     const s = key.signNep413Message!("alice.testnet", { message: "hello", recipient: "h", nonce });

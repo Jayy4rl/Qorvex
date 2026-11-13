@@ -62,7 +62,7 @@ async function signNonce(network: WalletNetwork, n: NonceResponse, signerId?: st
 export async function signInWithWallet(network: WalletNetwork, link = false): Promise<{ accountId: string; newUser?: boolean }> {
   const n = await api<NonceResponse>("/api/auth/near/nonce", { body: { network, purpose: link ? "link" : "sign-in" } });
   const s = await signNonce(network, n);
-  const out = await api(link ? "/api/auth/near/link" : "/api/auth/near/verify", { body: { nonce: n.nonce, accountId: s.accountId, publicKey: s.publicKey, signature: s.signature } });
+  const out = await api(link ? "/api/auth/near/link" : "/api/auth/near/verify", { body: { nonce: n.nonce, accountId: s.accountId, publicKey: s.publicKey, signature: s.signature, pageUrl: window.location.href } });
   return { accountId: s.accountId, newUser: out?.newUser };
 }
 
@@ -71,7 +71,7 @@ export async function stepUpHeader(network: NetworkId, action: string, target: s
   if (network === "sandbox") throw new WalletError("Wallets can't sign for the local demo network. Sign in with the operator token to use it.");
   const n = await api<NonceResponse>("/api/auth/near/nonce", { body: { network, purpose: "step-up", action, target, params } });
   const s = await signNonce(network, n, signerId);
-  const proof = { nonce: n.nonce, accountId: s.accountId, publicKey: s.publicKey, signature: s.signature };
+  const proof = { nonce: n.nonce, accountId: s.accountId, publicKey: s.publicKey, signature: s.signature, pageUrl: window.location.href };
   return { "x-qorvex-step-up": btoa(JSON.stringify(proof)) };
 }
 

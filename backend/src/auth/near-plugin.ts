@@ -26,7 +26,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import type { NetworkId } from "@qorvex/shared";
 import type { Db } from "../db/db.ts";
 import type { NearRpc } from "../near/rpc.ts";
-import { checkFullAccessKey, KEY_CHECK_MESSAGE, verifyNep413, type SignedNep413 } from "./nep413.ts";
+import { checkFullAccessKey, KEY_CHECK_MESSAGE, verifyNep413Report, type SignedNep413 } from "./nep413.ts";
 
 export const NONCE_TTL_MS = 5 * 60_000;
 export const NEAR_PROVIDER = "near";
@@ -39,6 +39,10 @@ export interface NearAuthOptions {
   origin: string;
   /** RPC for a network, or undefined when that network is not enabled. */
   rpcFor: (network: NetworkId) => NearRpc | undefined;
+  /** All origins of this app (a wallet may sign the page address as callbackUrl). */
+  trustedOrigins?: string[];
+  /** Server log, for signature failures. */
+  log?: (s: string) => void;
   /** Called after a NEAR sign-in, to attach pending NEAR-account invitations. */
   onSignedIn?: (userId: string, nearAccount: string) => Promise<void>;
 }
@@ -66,7 +70,25 @@ const signedBody = z.object({
   accountId: z.string().min(2).max(64),
   publicKey: z.string().min(10).max(128),
   signature: z.string().min(10).max(256),
+  /** The page the wallet was opened from; some wallets sign it as callbackUrl. */
+  pageUrl: z.string().max(500).optional(),
 });
+
+/** Page addresses a wallet may have signed as callbackUrl: only addresses of this app, with and without query/hash. */
+function pageCallbacks(o: NearAuthOptions, pageUrl?: string): string[] {
+  const origins = new Set([o.origin, ...(o.trustedOrigins ?? [])]);
+  const out: string[] = [];
+  if (pageUrl) {
+    try {
+      const u = new URL(pageUrl);
+      if (origins.has(u.origin)) out.push(pageUrl, `${u.origin}${u.pathname}`, `${u.origin}${u.pathname}${u.search}`);
+    } catch {
+      /* ignore an unparseable page address */
+    }
+  }
+  for (const origin of origins) out.push(origin, `${origin}/`);
+  return [...new Set(out)];
+}
 
 /** Stable hash of the parameters an action is bound to (key order does not matter). */
 export function paramsHash(params: unknown): string {
@@ -102,9 +124,19 @@ export class NearAuthError extends Error {
 }
 
 /** Verify a signature against a taken nonce row: signature, then the key on chain. */
-async function verifyAgainst(o: NearAuthOptions, row: NonceRow & { st: NonceState }, s: SignedNep413): Promise<void> {
-  const ok = await verifyNep413(s, { message: row.message, recipient: o.recipient, nonce: Buffer.from(row.nonce, "base64"), callbackUrl: row.st.callbackUrl ?? null });
-  if (!ok) throw new NearAuthError("SIGNATURE", "The signature does not match this sign-in request (wrong message, recipient, nonce or callbackUrl encoding).");
+async function verifyAgainst(o: NearAuthOptions, row: NonceRow & { st: NonceState }, s: SignedNep413 & { pageUrl?: string }): Promise<void> {
+  const report = await verifyNep413Report(s, {
+    message: row.message,
+    recipient: o.recipient,
+    nonce: Buffer.from(row.nonce, "base64"),
+    callbackUrl: row.st.callbackUrl ?? null,
+    extraCallbackUrls: pageCallbacks(o, s.pageUrl),
+  });
+  if (!report.ok) {
+    const detail = `account=${s.accountId} key=${s.publicKey} signature=${s.signature.slice(0, 12)}…(${s.signature.length} chars) purpose=${row.purpose} recipient=${o.recipient} tried=${JSON.stringify(report.tried)}`;
+    o.log?.(`NEP-413 signature did not verify: ${detail}`);
+    throw new NearAuthError("SIGNATURE", `The signature does not match this request (message, recipient, nonce or callbackUrl). ${detail}`);
+  }
   const rpc = o.rpcFor(row.st.network);
   if (!rpc) throw new NearAuthError("RPC", `Network ${row.st.network} is not enabled on this server.`);
   const k = await checkFullAccessKey(rpc, s.accountId, s.publicKey);
@@ -131,6 +163,7 @@ export function linkedNearAccounts(db: Db, userId: string): { network: NetworkId
 
 export interface StepUpProof extends SignedNep413 {
   nonce: string;
+  pageUrl?: string;
 }
 
 /**

@@ -81,6 +81,7 @@ export async function startQorvex(o: StartOptions): Promise<Qorvex> {
     dataDir: dir,
     rpcFor,
     email: logEmailSender(log),
+    log,
     extraOrigins: (env("QORVEX_TRUSTED_ORIGINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
     onNearSignIn: async (userId, accountKey) => {
       const joined = tenancy.acceptNearInvites(userId, accountKey);

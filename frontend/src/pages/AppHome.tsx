@@ -15,6 +15,7 @@ import type { Health } from "@qorvex/shared";
 import "../styles/auth.css";
 import "../styles/app.css";
 import { errorText } from "../lib/errors";
+import { IconCode, IconEye, IconGauge, IconPulse, IconRelay, IconShield, IconUser } from "../components/icons";
 
 /**
  * Signed-in app shell: workspace switcher, the workspace's contracts, and the
@@ -37,17 +38,18 @@ export default function AppHome() {
   if (who === null) return <Navigate to="/sign-in" replace state={{ from: "/app" }} />;
 
   return (
-    <section className="container page">
-      <AppBar who={who} onChange={reload} />
-      {who.warnings?.map((w) => (
-        <p key={w} className="notice">
-          {w}
-        </p>
-      ))}
-      {!who.workspace ? (
-        <CreateWorkspace onDone={reload} />
-      ) : (
-        <Routes>
+    <section className="container page console">
+      <Sidebar who={who} onChange={reload} />
+      <div className="console-main">
+        {who.warnings?.map((w) => (
+          <p key={w} className="notice">
+            {w}
+          </p>
+        ))}
+        {!who.workspace ? (
+          <CreateWorkspace onDone={reload} />
+        ) : (
+          <Routes>
           <Route index element={<Overview />} />
           <Route path="contracts" element={<Contracts who={who} />} />
           <Route path="relayers" element={<Relayers />} />
@@ -56,13 +58,15 @@ export default function AppHome() {
           <Route path="contracts/:id" element={<ContractPage />} />
           <Route path="incidents/:id" element={<IncidentPage />} />
           <Route path="simulations" element={<Simulations />} />
-        </Routes>
-      )}
+          </Routes>
+        )}
+      </div>
     </section>
   );
 }
 
-function AppBar({ who, onChange }: { who: Me; onChange: () => void }) {
+/** Console navigation: workspace at the top, sections, then account and sign-out. */
+function Sidebar({ who, onChange }: { who: Me; onChange: () => void }) {
   const navigate = useNavigate();
   const [demo, setDemo] = useState(false);
   useEffect(() => void api<Health>("/api/health").then((h) => setDemo(h.demo)).catch(() => {}), []);
@@ -77,25 +81,12 @@ function AppBar({ who, onChange }: { who: Me; onChange: () => void }) {
     await disconnectWallets();
     navigate("/", { replace: true });
   };
+  const account = who.kind === "admin" ? "Operator token" : (who.user?.email ?? who.nearAccounts.map((a) => a.accountId).join(", ")) || who.user?.name || "Signed in";
   return (
-    <div className="appbar">
-      <div className="row">
-        <Link to="/app" className="mono">
-          {who.workspace?.name ?? "No workspace"}
-        </Link>
-        {who.workspace && <span className="pill pill-outline-lime tiny">{who.workspace.role}</span>}
-        {who.workspace && (
-          <nav className="row small" aria-label="Console">
-            <NavItem to="/app" end>
-              Overview
-            </NavItem>
-            <NavItem to="/app/contracts">Contracts</NavItem>
-            <NavItem to="/app/relayers">Relayers</NavItem>
-            <NavItem to="/app/team">Team</NavItem>
-            {demo && <NavItem to="/app/simulations">Simulations</NavItem>}
-          </nav>
-        )}
-        {who.workspaces.length > 1 && (
+    <aside className="sidebar" aria-label="Console">
+      <div className="sidebar-ws">
+        <p className="faint tiny-label">Workspace</p>
+        {who.workspaces.length > 1 ? (
           <select className="auth-input mono slim" value={who.workspace?.id ?? ""} onChange={(e) => switchTo(e.target.value)} aria-label="Switch workspace">
             {who.workspaces.map((w) => (
               <option key={w.id} value={w.id}>
@@ -103,25 +94,57 @@ function AppBar({ who, onChange }: { who: Me; onChange: () => void }) {
               </option>
             ))}
           </select>
+        ) : (
+          <p className="sidebar-ws-name">{who.workspace?.name ?? "No workspace yet"}</p>
         )}
+        {who.workspace && <span className="pill tiny pill-outline-lime">{who.workspace.role}</span>}
       </div>
-      <div className="row">
-        <span className="faint small mono">{who.kind === "admin" ? "operator token" : who.user?.email ?? who.nearAccounts.map((a) => a.accountId).join(", ")}</span>
-        <Link to="/check" className="btn btn-sm btn-secondary">
+      {who.workspace && (
+        <nav className="sidebar-nav">
+          <NavItem to="/app" end icon={<IconGauge size={18} />}>
+            Overview
+          </NavItem>
+          <NavItem to="/app/contracts" icon={<IconShield size={18} />}>
+            Contracts
+          </NavItem>
+          <NavItem to="/app/relayers" icon={<IconRelay size={18} />}>
+            Relayers
+          </NavItem>
+          <NavItem to="/app/team" icon={<IconUser size={18} />}>
+            Team
+          </NavItem>
+          {demo && (
+            <NavItem to="/app/simulations" icon={<IconPulse size={18} />}>
+              Simulations
+            </NavItem>
+          )}
+        </nav>
+      )}
+      <nav className="sidebar-nav sidebar-secondary">
+        <NavItem to="/check" icon={<IconEye size={18} />}>
           Check a contract
-        </Link>
+        </NavItem>
+        <NavItem to="/docs" icon={<IconCode size={18} />}>
+          Docs
+        </NavItem>
+      </nav>
+      <div className="sidebar-account">
+        <p className="faint small mono" title={account}>
+          {account}
+        </p>
         <button className="btn btn-sm btn-secondary" onClick={out}>
           Sign out
         </button>
       </div>
-    </div>
+    </aside>
   );
 }
 
-function NavItem({ to, end, children }: { to: string; end?: boolean; children: React.ReactNode }) {
+function NavItem({ to, end, icon, children }: { to: string; end?: boolean; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <NavLink to={to} end={end} className={({ isActive }) => `app-nav ${isActive ? "on" : ""}`}>
-      {children}
+      {icon}
+      <span>{children}</span>
     </NavLink>
   );
 }
