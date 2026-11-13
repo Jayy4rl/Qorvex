@@ -526,7 +526,16 @@ export interface AuthorityClaim {
   network: NetworkId;
   contractId: string;
   method: "owner-account" | "near-plugins-admin" | "dao-council" | "contract-account" | "guardian-transaction" | "admin-token";
-  evidence: { account: string; detail: string };
+  evidence: {
+    account: string;
+    detail: string;
+    /**
+     * Whether `account` is the guardian's council for this contract (or sits on
+     * the council of the DAO the guardian names). Only then may this workspace
+     * trigger automatic pauses. Absent until checked.
+     */
+    council?: { council: string | null; matches: boolean; checkedAt: string };
+  };
   status: "verified" | "lapsed" | "pending";
   verifiedAt: string | null;
 }

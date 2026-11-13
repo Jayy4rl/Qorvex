@@ -197,11 +197,11 @@ function LinkedAccounts({ who }: { who: Me }) {
         {who.nearAccounts.length ? who.nearAccounts.map((a) => <li key={`${a.network}:${a.accountId}`}>{a.accountId} <span className="faint">({a.network})</span></li>) : <li className="faint">none yet</li>}
       </ul>
       <div className="row">
-        <button className="btn btn-sm btn-secondary" onClick={() => link("mainnet")}>
-          Link a mainnet account
-        </button>
         <button className="btn btn-sm btn-secondary" onClick={() => link("testnet")}>
           Link a testnet account
+        </button>
+        <button className="btn btn-sm btn-secondary" onClick={() => link("mainnet")}>
+          Link a mainnet account
         </button>
       </div>
       {msg && <p className="small">{msg}</p>}

@@ -16,11 +16,11 @@ import { errorText } from "../lib/errors";
 export default function Check() {
   const params = useParams();
   const navigate = useNavigate();
-  const [network, setNetwork] = useState<NetworkId>((params.network as NetworkId) ?? "mainnet");
+  const [network, setNetwork] = useState<NetworkId>((params.network as NetworkId) ?? "testnet");
   const [contractId, setContractId] = useState(params.contractId ?? "");
   const [result, setResult] = useState<ContractCheck | null>(null);
-  const [networks, setNetworks] = useState<string[]>(["mainnet", "testnet"]);
-  useEffect(() => void api<{ networks: string[] }>("/api/health").then((h) => h.networks.includes("sandbox") && setNetworks(["mainnet", "testnet", "sandbox"])).catch(() => {}), []);
+  const [networks, setNetworks] = useState<string[]>(["testnet", "mainnet"]);
+  useEffect(() => void api<{ networks: string[] }>("/api/health").then((h) => h.networks.includes("sandbox") && setNetworks(["testnet", "mainnet", "sandbox"])).catch(() => {}), []);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useTitle(params.contractId ? `${params.contractId} · Check` : "Check a contract");
@@ -65,7 +65,7 @@ export default function Check() {
             </option>
           ))}
         </select>
-        <input className="auth-input mono" placeholder="e.g. intents.near" value={contractId} onChange={(e) => setContractId(e.target.value)} aria-label="Contract id" spellCheck={false} autoCapitalize="off" />
+        <input className="auth-input mono" placeholder="e.g. wrap.testnet" value={contractId} onChange={(e) => setContractId(e.target.value)} aria-label="Contract id" spellCheck={false} autoCapitalize="off" />
         <button className="btn btn-primary" disabled={busy || !contractId.trim()}>
           {busy ? "Reading the chain…" : "Check"}
         </button>

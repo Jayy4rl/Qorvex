@@ -30,7 +30,7 @@ import { HttpError, body, obj, send } from "./http.ts";
 import type { Action } from "../auth/access.ts";
 import { API_KEY_SCOPES, ROLES } from "../auth/access.ts";
 import { linkedNearAccounts, nearAccountKey } from "../auth/near-plugin.ts";
-import { authorisationTxs, authorityFrom, detect, recoveryTxs } from "../tenancy/authority.ts";
+import { authorisationTxs, authorityFrom, councilMatch, detect, recoveryTxs } from "../tenancy/authority.ts";
 import { DEFAULT_WORKSPACE } from "../tenancy/tenancy.ts";
 import { isAccountId } from "../rules/validate.ts";
 import { instantiate, relayerBudgetTemplate, templatesFor } from "../rules/templates.ts";
@@ -197,7 +197,10 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       if (signed && ctx.p.kind === "session" && !nearAccounts(ctx, network).includes(signed.accountId)) {
         t.db.prepare("INSERT INTO account (id, accountId, providerId, userId, createdAt, updatedAt) VALUES (?, ?, 'near', ?, ?, ?)").run(newId("acc"), nearAccountKey(network, signed.accountId), ctx.p.userId, new Date().toISOString(), new Date().toISOString());
       }
-      const claim = t.putClaim({ workspaceId: ctx.ws, network, contractId, method: found.method, evidence: found.evidence, status: "verified", verifiedAt: new Date().toISOString() });
+      // Pausing also needs the claimer to be the guardian's council for this contract (checked again when the guardian is authorised).
+      const council = found.method === "admin-token" ? { council: null, matches: true, checkedAt: new Date().toISOString() } : await councilMatch(n.rpc, n.guardianId, contractId, found.evidence.account).catch(() => undefined);
+      const claim = t.putClaim({ workspaceId: ctx.ws, network, contractId, method: found.method, evidence: { ...found.evidence, ...(council ? { council } : {}) }, status: "verified", verifiedAt: new Date().toISOString() });
+      if (council?.matches) t.claimCanonical(network, contractId, ctx.ws);
       // Start a private watch for this workspace if there is none.
       let watch = d.store.protocols().find((p) => p.network === network && p.contractId === contractId && wsOf(p) === ctx.ws);
       if (!watch) {
@@ -240,6 +243,8 @@ export function saasRoutes(h: SaasHelpers): Route[] {
       const p = getProtocol(m[1], ctx);
       const det = await fresh(p.network, p.contractId, 0);
       const ok = !!det.guardianRegistration;
+      // The registration names the council: re-check whether this workspace's claim matches it.
+      if (ok) await d.reverifyClaim?.(ctx.ws, p.network, p.contractId);
       if (ok) {
         p.status = "protected";
         p.guardianId = net(p.network).guardianId;

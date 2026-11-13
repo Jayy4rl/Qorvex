@@ -166,6 +166,24 @@ export async function detect(rpc: NearRpc, network: NetworkId, contractId: strin
 }
 
 /**
+ * Is `account` the guardian's council for `contractId`? The council is the
+ * account the guardian registered for the target (the one that may allow a
+ * repeat pause), so this ties pausing to the authority the chain recognises.
+ * A DAO council counts through its members who can approve proposals.
+ */
+export async function councilMatch(rpc: NearRpc, guardianId: string | undefined, contractId: string, account: string): Promise<{ council: string | null; matches: boolean; checkedAt: string }> {
+  const checkedAt = new Date().toISOString();
+  if (!guardianId) return { council: null, matches: false, checkedAt };
+  const reg = await tryView<{ council?: string } | null>(rpc, guardianId, "get_target", { target: contractId });
+  if (!reg.ok) throw new Error(`could not read the guardian registration: ${reg.error}`);
+  const council = reg.value?.council ?? null;
+  if (!council) return { council: null, matches: false, checkedAt };
+  if (council === account) return { council, matches: true, checkedAt };
+  const policy = await tryView<any>(rpc, council, "get_policy");
+  return { council, matches: policy.ok && Array.isArray(policy.value?.roles) && daoCouncil(policy.value).includes(account), checkedAt };
+}
+
+/**
  * Does one of `accounts` control the contract? Re-reads the chain via `detect`.
  * Returns the first matching method, or null.
  */

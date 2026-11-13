@@ -784,6 +784,20 @@ function Proposals({ protocolId, health, onChange }: { protocolId: string; healt
   );
 }
 
+/** Whether this workspace may trigger automatic pauses: its claim must come from the guardian's own council. */
+function CouncilLine({ claim }: { claim: AuthorityClaim }) {
+  const c = claim.evidence.council;
+  if (claim.method === "admin-token") return <p className="small">Automatic pause: allowed (operator workspace).</p>;
+  if (!c) return <p className="small">Automatic pause: not yet allowed. It is checked against the guardian's council once the guardian is authorised.</p>;
+  if (c.matches) return <p className="small ok">Automatic pause: allowed. {claim.evidence.account} is the guardian's council{c.council && c.council !== claim.evidence.account ? ` (a member of ${c.council})` : ""}.</p>;
+  return (
+    <p className="small">
+      Automatic pause: not allowed for this workspace.{" "}
+      {c.council ? `The guardian's council for this contract is ${c.council}, and ${claim.evidence.account} is not it or one of its approvers.` : "The contract is not registered with the guardian yet."} Monitoring and alerts still work.
+    </p>
+  );
+}
+
 // ------------------------------------------------- status page & authority
 
 function StatusAndAuthority({ detail, view, onChange }: { detail: ProtocolDetail; view: DetectionView; onChange: () => void }) {
@@ -827,6 +841,7 @@ function StatusAndAuthority({ detail, view, onChange }: { detail: ProtocolDetail
               {view.claim.evidence.detail} <span className={`pill tiny ${view.claim.status === "verified" ? "pill-lime" : "pill-bad"}`}>{view.claim.status}</span>
             </p>
             <p className="faint small">Method: {view.claim.method} · last verified {ago(view.claim.verifiedAt ?? undefined)}. Re-checked from chain state on sensitive actions and every 6 hours.</p>
+            <CouncilLine claim={view.claim} />
             <button className="btn btn-sm btn-secondary" onClick={act(() => api(`/api/claims/${view.claim!.id}/reverify`, { body: {} }))}>
               Re-verify now
             </button>

@@ -85,15 +85,15 @@ export default function SignIn() {
 }
 
 function WalletForm({ busy, onGo }: { busy: boolean; onGo: (n: WalletNetwork) => void }) {
-  const [network, setNetwork] = useState<WalletNetwork>("mainnet");
+  const [network, setNetwork] = useState<WalletNetwork>("testnet");
   return (
     <div className="stack">
       <p className="muted">Your wallet signs a one-time message for this site. Nothing is sent on-chain and no fee is charged. A full-access key is required.</p>
       <label className="auth-label mono">
         Network
         <select className="auth-input mono" value={network} onChange={(e) => setNetwork(e.target.value as WalletNetwork)}>
-          <option value="mainnet">mainnet</option>
           <option value="testnet">testnet</option>
+          <option value="mainnet">mainnet</option>
         </select>
       </label>
       <button className="btn btn-primary auth-submit" disabled={busy} onClick={() => onGo(network)}>

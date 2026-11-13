@@ -5,7 +5,7 @@
  */
 import type { AuthorityClaim, NetworkId, Protocol } from "@qorvex/shared";
 import type { NearRpc } from "../near/rpc.ts";
-import { authorityFrom, detect } from "./authority.ts";
+import { authorityFrom, councilMatch, detect } from "./authority.ts";
 import { DEFAULT_WORKSPACE, type Tenancy } from "./tenancy.ts";
 
 export interface ClaimDeps {
@@ -31,7 +31,13 @@ export async function reverifyClaim(c: ClaimDeps, workspaceId: string, network: 
   }
   c.tenancy.putDetection(d);
   const still = authorityFrom(d, [claim.evidence.account]);
-  if (still) return c.tenancy.putClaim({ ...claim, ...still, status: "verified", verifiedAt: new Date().toISOString() });
+  if (still) {
+    // Keep the last council check if the guardian could not be read this time (RPC trouble is not evidence).
+    const council = await councilMatch(rpc, c.guardianFor(network), contractId, claim.evidence.account).catch(() => claim.evidence.council);
+    const updated = c.tenancy.putClaim({ ...claim, ...still, evidence: { ...still.evidence, ...(council ? { council } : {}) }, status: "verified", verifiedAt: new Date().toISOString() });
+    if (council?.matches) c.tenancy.claimCanonical(network, contractId, workspaceId);
+    return updated;
+  }
   const lapsed = c.tenancy.putClaim({ ...claim, status: "lapsed" });
   if (claim.status === "verified") {
     const why = `${claim.evidence.account} no longer controls ${contractId} (${claim.evidence.detail} is no longer true)`;
@@ -61,6 +67,13 @@ export function mayPause(t: Tenancy, p: Protocol): { ok: true } | { ok: false; r
   const ws = p.workspaceId ?? DEFAULT_WORKSPACE;
   if (ws === DEFAULT_WORKSPACE) return { ok: true };
   const claim = t.claim(ws, p.network, p.contractId);
-  if (claim?.status === "verified") return { ok: true };
-  return { ok: false, reason: claim?.status === "lapsed" ? "this workspace's authority over the contract lapsed: alert only" : "this workspace has no verified authority over the contract: alert only" };
+  if (claim?.status !== "verified") {
+    return { ok: false, reason: claim?.status === "lapsed" ? "this workspace's authority over the contract lapsed: alert only" : "this workspace has no verified authority over the contract: alert only" };
+  }
+  // Only the workspace holding the contract's official record, proven by the guardian's own council, may pause.
+  if (t.canonical(p.network, p.contractId)?.claimedBy !== ws) return { ok: false, reason: "another workspace holds this contract's official record: alert only" };
+  if (claim.method !== "admin-token" && !claim.evidence.council?.matches) {
+    return { ok: false, reason: "this workspace's account is not the guardian council for this contract: alert only" };
+  }
+  return { ok: true };
 }
