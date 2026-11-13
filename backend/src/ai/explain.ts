@@ -92,6 +92,43 @@ function proposalExplainMessages(b: Breach) {
   ];
 }
 
+/**
+ * A recorded explanation names the block heights and receipts of the run it
+ * was recorded in. Replayed for another incident, those identifiers are
+ * swapped for the current incident's: the recorded and current facts have the
+ * same shape, so every leaf that differs (and every number inside a differing
+ * string) gives an old -> new pair. The model's reasoning is unchanged.
+ */
+export function retargetExplanation(text: string, recordedFacts: unknown, currentFacts: unknown): string {
+  const pairs = new Map<string, string>();
+  const add = (a: unknown, b: unknown) => {
+    const x = String(a);
+    const y = String(b);
+    if (x !== y && x.length >= 3) pairs.set(x, y);
+  };
+  const walk = (a: unknown, b: unknown) => {
+    if (a === null || b === null || a === undefined || b === undefined) return;
+    if (typeof a === "object" && typeof b === "object") {
+      for (const k of Object.keys(a as object)) walk((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]);
+      return;
+    }
+    if (typeof a === "string" && typeof b === "string" && a !== b) {
+      const na = a.match(/\d+/g) ?? [];
+      const nb = b.match(/\d+/g) ?? [];
+      if (na.length && na.length === nb.length && a.replace(/\d+/g, "#") === b.replace(/\d+/g, "#")) na.forEach((n, i) => add(n, nb[i]));
+      else add(a, b);
+      return;
+    }
+    if ((typeof a === "number" || typeof a === "string") && (typeof b === "number" || typeof b === "string")) add(a, b);
+  };
+  walk(recordedFacts, currentFacts);
+  if (!pairs.size) return text;
+  // One pass over the text, longest identifiers first, so a replaced value is never replaced again.
+  const keys = [...pairs.keys()].sort((p, q) => q.length - p.length);
+  const re = new RegExp(keys.map((k) => (/^\d+$/.test(k) ? `(?<![\\d.,])${k}(?![\\d])` : k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).join("|"), "g");
+  return text.replace(re, (m) => pairs.get(m) ?? m);
+}
+
 export async function explainBreach(ai: NearAiClient, b: Breach, contract?: string, units?: TokenUnits): Promise<Breach["explanation"] | undefined> {
   let request: { messages: ReturnType<typeof explainMessages>; replayKey: object; maxTokens: number };
   if (b.evaluation.type === "proposal") {
@@ -106,6 +143,16 @@ export async function explainBreach(ai: NearAiClient, b: Breach, contract?: stri
   }
   try {
     const r = await ai.chat(ai.cfg.explainModel, request.messages, request.replayKey, { maxTokens: request.maxTokens });
+    if (r.source === "replay" && r.recordedRequest) {
+      const recorded = (r.recordedRequest as { messages?: { content?: string }[] }).messages?.[1]?.content;
+      if (recorded) {
+        try {
+          r.text = retargetExplanation(r.text, JSON.parse(recorded), JSON.parse(request.messages[1].content));
+        } catch {
+          /* recorded facts not comparable: keep the text */
+        }
+      }
+    }
     return { model: r.model, text: r.text.trim(), at: new Date().toISOString(), source: r.source === "replay" ? "replay" : "live" };
   } catch (e) {
     if (e instanceof FixtureMissingError) return undefined; // replay mode without a recording: no explanation

@@ -157,3 +157,17 @@ describe("drafting pipeline (A4, A5, A6)", () => {
     expect(out.run.dropped).toHaveLength(1);
   });
 });
+
+describe("replayed incident explanations", () => {
+  it("swap the recorded run's block heights and receipts for the current incident's", async () => {
+    const { retargetExplanation } = await import("../../src/ai/explain.ts");
+    const recorded = { contract: "ledger.test.near", triggerBlock: 180, evaluation: { owed: "290000000000", held: "250000000000", block: 181 }, receipts_in_breaking_block: [{ receiptId: "GvMd5FePSCVudKZ6wP1CtfM67Ks5ba9uSEvFt9cJXWD", receiver: "usdc.test.near" }], qorvex_action: "Qorvex paused the contract through the guardian at block 184." };
+    const current = { contract: "ledger.test.near", triggerBlock: 171, evaluation: { owed: "290000000000", held: "250000000000", block: 172 }, receipts_in_breaking_block: [{ receiptId: "8nA43z8Qx4Cke7S8dvvBXoEDSEBoh9xAqHpnJYAYKAuc", receiver: "usdc.test.near" }], qorvex_action: "Qorvex paused the contract through the guardian at block 176." };
+    const text = "Solvency breach: USDC owed (290k) exceeds held (250k) by 40k USDC.\nCheck receipt GvMd5FePSCVudKZ6wP1CtfM67Ks5ba9uSEvFt9cJXWD in block 180.\nQorvex paused the contract through the guardian at block 184.";
+    const out = retargetExplanation(text, recorded, current);
+    expect(out).toContain("receipt 8nA43z8Qx4Cke7S8dvvBXoEDSEBoh9xAqHpnJYAYKAuc in block 171");
+    expect(out).toContain("at block 176.");
+    expect(out).toContain("owed (290k) exceeds held (250k) by 40k");
+    expect(retargetExplanation(text, recorded, recorded)).toBe(text);
+  });
+});
