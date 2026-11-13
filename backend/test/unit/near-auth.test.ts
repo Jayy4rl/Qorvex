@@ -120,6 +120,9 @@ describe("NEAR sign-in", () => {
     const ask = async (params: unknown) => (await post("/near/nonce", { network: "testnet", purpose: "step-up", action: "apikey.create", target: "ws1", params }, login.cookie)).body;
     const n = await ask({ name: "ci", scopes: ["contracts:read"] });
     expect(n.message).toContain("Qorvex action: apikey.create");
+    // Plain ASCII only: some wallets write a message's length in characters rather than UTF-8
+    // bytes, so a "·" in the text made every step-up signature fail to verify.
+    for (const m of [n0.message, n.message]) expect(m).toMatch(/^[\x20-\x7e\n]*$/);
     const s = sign(key, n);
     const proof = { nonce: n.nonce, accountId: "alice.testnet", publicKey: s.publicKey, signature: s.signature };
     // Different parameters than signed: refused (and the nonce is spent).
@@ -146,6 +149,9 @@ describe("NEAR sign-in", () => {
     const bad = await post("/near/verify", { nonce: n2.nonce, accountId: "alice.testnet", publicKey: s2.publicKey, signature: s2.signature, pageUrl: "https://evil.example/x" });
     expect(bad.status).toBe(401);
     expect(bad.body.code).toBe("NEAR_SIGNATURE");
+    // The browser gets the reason, not the wallet's key or signature.
+    expect(JSON.stringify(bad.body)).not.toContain(s2.publicKey);
+    expect(JSON.stringify(bad.body)).not.toContain(s2.signature.slice(0, 12));
     // A wallet returning the signature as bare base58.
     const n3 = (await post("/near/nonce", { network: "testnet", purpose: "sign-in" })).body;
     const s3 = sign(key, n3);

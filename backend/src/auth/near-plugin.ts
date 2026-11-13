@@ -133,8 +133,9 @@ async function verifyAgainst(o: NearAuthOptions, row: NonceRow & { st: NonceStat
     extraCallbackUrls: pageCallbacks(o, s.pageUrl),
   });
   if (!report.ok) {
-    const detail = `account=${s.accountId} key=${s.publicKey} signature=${s.signature.slice(0, 12)}…(${s.signature.length} chars) purpose=${row.purpose} recipient=${o.recipient} tried=${JSON.stringify(report.tried)}`;
-    o.log?.(`NEP-413 signature did not verify: ${detail}`);
+    // The server log keeps the key and signature for debugging; the browser gets everything else.
+    const detail = `account=${s.accountId} purpose=${row.purpose} recipient=${o.recipient} tried=${JSON.stringify(report.tried)}`;
+    o.log?.(`NEP-413 signature did not verify: ${detail} key=${s.publicKey} signature=${s.signature.slice(0, 12)}…(${s.signature.length} chars)`);
     throw new NearAuthError("SIGNATURE", `The signature does not match this request (message, recipient, nonce or callbackUrl). ${detail}`);
   }
   const rpc = o.rpcFor(row.st.network);
@@ -228,7 +229,7 @@ export const nearAuth = (o: NearAuthOptions) => {
             state.action = b.action;
             state.target = b.target;
             state.paramsHash = paramsHash(b.params);
-            message = `Qorvex action: ${b.action} · contract: ${b.target} · params: ${state.paramsHash}\nhost: ${o.recipient}\nissued: ${issued()}`;
+            message = `Qorvex action: ${b.action} | contract: ${b.target} | params: ${state.paramsHash}\nhost: ${o.recipient}\nissued: ${issued()}`;
           }
           const nonce = issueNonce(o.db, b.purpose, message, state, userId);
           return ctx.json({ nonce, message, recipient: o.recipient, callbackUrl: b.callbackUrl ?? null, expiresInMs: NONCE_TTL_MS });
