@@ -14,7 +14,8 @@ import { aiConfig, dataDir, env, loadDotEnv, NETWORKS } from "../config.ts";
 import { WEB_DIST_DIR } from "../paths.ts";
 import { Store } from "../store/store.ts";
 import { NearAiClient } from "../ai/client.ts";
-import { explainBreach } from "../ai/explain.ts";
+import { explainBreach, type TokenUnits } from "../ai/explain.ts";
+import { cachedTokenMeta } from "../near/tokens.ts";
 import { Alerter, channelsFromEnv, type AlertChannel } from "../alerts/alerts.ts";
 import { networkRuntime, type NetworkRuntime } from "./runtime.ts";
 import { createServer, type ApiDeps } from "./api.ts";
@@ -60,11 +61,24 @@ export async function startQorvex(o: StartOptions): Promise<Qorvex> {
   const publicUrl = o.publicUrl ?? `http://localhost:${o.port}`;
   const runtimes = new Map<NetworkId, NetworkRuntime>();
   for (const id of o.networks) {
-    runtimes.set(id, networkRuntime(id, { store, alerter, dataDir: dir, publicUrl, explain: (b) => explainBreach(ai, b), mayPause: (p) => mayPause(tenancy, p), log: (s) => log(`[${id}] ${s}`) }, o.rpcOverrides?.[id] ?? {}));
+    runtimes.set(id, networkRuntime(id, { store, alerter, dataDir: dir, publicUrl, explain: (b) => explainWithUnits(b), mayPause: (p) => mayPause(tenancy, p), log: (s) => log(`[${id}] ${s}`) }, o.rpcOverrides?.[id] ?? {}));
   }
   // Wallet sign-in needs mainnet/testnet RPC to check the signer's key even when this server
   // does not watch that network (e.g. the local sandbox demo).
   const signInRpcs = new Map<NetworkId, NearRpc>();
+  /** Breach explanation with the contract and the token's units (plain amounts for the model). */
+  async function explainWithUnits(b: Parameters<typeof explainBreach>[1]) {
+    const p = store.protocol(b.protocolId);
+    const token = b.rule.type === "proposal_policy" ? undefined : b.rule.token;
+    const rt = p ? runtimes.get(p.network) : undefined;
+    let units: TokenUnits | undefined;
+    if (token === "near") units = { decimals: 24, symbol: "NEAR" };
+    else if (token && rt) {
+      const meta = await cachedTokenMeta(rt.rpc, token).catch(() => undefined);
+      if (meta?.decimals !== undefined) units = { decimals: meta.decimals, symbol: meta.symbol };
+    }
+    return explainBreach(ai, b, p?.contractId, units);
+  }
   const rpcFor = (n: NetworkId) => {
     const rt = runtimes.get(n)?.rpc;
     if (rt || n === "sandbox") return rt;

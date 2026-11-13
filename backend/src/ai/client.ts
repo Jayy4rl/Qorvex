@@ -68,6 +68,17 @@ export class NearAiClient {
       const fx = JSON.parse(fs.readFileSync(file, "utf8")) as Fixture;
       return { text: fx.text, model: fx.modelUsed ?? model, chatId: fx.chatId, source: "replay", fixture: path.basename(file) };
     }
+    // Record mode records what is missing: existing recordings are replayed, and
+    // QORVEX_AI_RECORD_JOBS (comma-separated) limits which jobs may call the model.
+    if (this.cfg.mode === "record") {
+      const jobs = (process.env.QORVEX_AI_RECORD_JOBS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+      const job = (replayKey as { job?: string }).job ?? "";
+      if (fs.existsSync(file) || (jobs.length && !jobs.includes(job))) {
+        if (!fs.existsSync(file)) throw new FixtureMissingError(`no recorded NEAR AI response for this request (${path.basename(file)}); job ${job} is not in QORVEX_AI_RECORD_JOBS.`);
+        const fx = JSON.parse(fs.readFileSync(file, "utf8")) as Fixture;
+        return { text: fx.text, model: fx.modelUsed ?? model, chatId: fx.chatId, source: "replay", fixture: path.basename(file) };
+      }
+    }
     if (!this.cfg.apiKey) throw new Error("NEARAI_API_KEY is not set (required for QORVEX_AI_MODE=live/record)");
     let request: Record<string, unknown> = {};
     let response: any;

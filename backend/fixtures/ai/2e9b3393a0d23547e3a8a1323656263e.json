@@ -1,0 +1,59 @@
+{
+  "replayKey": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "job": "explain-breach",
+    "contract": "vault.test.near",
+    "ruleId": "solvency-usdc",
+    "ruleType": "solvency"
+  },
+  "request": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You explain security incidents on NEAR smart contracts to the protocol's on-call engineer. The contract is already paused (or the rule is alert-only); you do not decide anything. Plain text, at most 8 short lines: what broke, by how much (give the difference, using the *_plain amounts when present), which accounts and receipts/transactions to check first, and the most likely cause based only on the receipts listed (e.g. a deposit that was refunded but stayed credited shows as an ft_on_transfer/resolve followed by ft_resolve_transfer). Describe Qorvex's action exactly as given in qorvex_action. If the data does not show the cause, say so instead of guessing."
+      },
+      {
+        "role": "user",
+        "content": "{\"contract\":\"vault.test.near\",\"rule\":{\"id\":\"solvency-usdc\",\"type\":\"solvency\",\"token\":\"usdc.test.near\",\"owed\":{\"view\":\"total_owed\",\"args\":{\"token_id\":\"usdc.test.near\"}},\"held\":{\"contract\":\"usdc.test.near\",\"view\":\"ft_balance_of\",\"args\":{\"account_id\":\"vault.test.near\"}},\"explain\":\"The total USDC owed to users must never exceed the USDC actually held by the vault.\",\"status\":\"approved\",\"response\":\"pause\",\"origin\":{\"kind\":\"ai\",\"model\":\"Qwen/Qwen3.8-27B\",\"draftId\":\"drf_a0e8a8b7d199\"},\"approvedBy\":\"demo operator\",\"approvedAt\":\"2026-11-13T11:46:49.833Z\"},\"evaluation\":{\"owed\":\"290000000000\",\"held\":\"250000000000\",\"block\":193,\"owed_plain\":\"290,000 USDC\",\"held_plain\":\"250,000 USDC\",\"shortfall_plain\":\"40,000 USDC\"},\"confirmation\":{\"owed\":\"290000000000\",\"held\":\"250000000000\",\"block\":193},\"triggerBlock\":193,\"receipts_in_breaking_block\":[{\"receiptId\":\"8nA43z8Qx4Cke7S8dvvBXoEDSEBoh9xAqHpnJYAYKAuc\",\"predecessor\":\"vault.test.near\",\"receiver\":\"usdc.test.near\"}],\"qorvex_action\":\"Qorvex did not send a pause: contract had already paused itself (in-contract guard).\"}"
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 600,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "response": {
+    "id": "5dbe5605a6d3450aa36b885a1f032a5e",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Solvency breach: USDC owed (290k) exceeds held (250k).\nShortfall is 40,000 USDC.\nCheck receipt 8nA43z8Qx4Cke7S8dvvBXoEDSEBoh9xAqHpnJYAYKAuc.\nThis receipt shows vault.test.near interacting with usdc.test.near.\nLikely cause: A withdrawal or transfer reduced held balance below owed.\nVerify if the transfer was authorized and completed successfully.\nQorvex did not send a pause: contract had already paused itself (in-contract guard).\nNo further action needed; contract is already paused."
+        },
+        "finish_reason": "stop",
+        "logprobs": null,
+        "matched_stop": 248046
+      }
+    ],
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "created": 1794570437,
+    "usage": {
+      "prompt_tokens": 551,
+      "total_tokens": 700,
+      "completion_tokens": 149,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "reasoning_tokens": 0,
+      "completion_tokens_details": null
+    }
+  },
+  "text": "Solvency breach: USDC owed (290k) exceeds held (250k).\nShortfall is 40,000 USDC.\nCheck receipt 8nA43z8Qx4Cke7S8dvvBXoEDSEBoh9xAqHpnJYAYKAuc.\nThis receipt shows vault.test.near interacting with usdc.test.near.\nLikely cause: A withdrawal or transfer reduced held balance below owed.\nVerify if the transfer was authorized and completed successfully.\nQorvex did not send a pause: contract had already paused itself (in-contract guard).\nNo further action needed; contract is already paused.",
+  "chatId": "5dbe5605a6d3450aa36b885a1f032a5e",
+  "recordedAt": "2026-11-13T11:47:18.728Z",
+  "modelUsed": "Qwen/Qwen3.6-35B-A3B-FP8"
+}

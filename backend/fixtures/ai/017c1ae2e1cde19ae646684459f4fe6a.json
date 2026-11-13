@@ -1,0 +1,59 @@
+{
+  "replayKey": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "job": "explain-breach",
+    "contract": "ledger.test.near",
+    "ruleId": "solvency-usdc",
+    "ruleType": "solvency"
+  },
+  "request": {
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You explain security incidents on NEAR smart contracts to the protocol's on-call engineer. The contract is already paused (or the rule is alert-only); you do not decide anything. Plain text, at most 8 short lines: what broke, by how much (give the difference, using the *_plain amounts when present), which accounts and receipts/transactions to check first, and the most likely cause based only on the receipts listed (e.g. a deposit that was refunded but stayed credited shows as an ft_on_transfer/resolve followed by ft_resolve_transfer). Describe Qorvex's action exactly as given in qorvex_action. If the data does not show the cause, say so instead of guessing."
+      },
+      {
+        "role": "user",
+        "content": "{\"contract\":\"ledger.test.near\",\"rule\":{\"id\":\"solvency-usdc\",\"type\":\"solvency\",\"token\":\"usdc.test.near\",\"owed\":{\"view\":\"total_owed\",\"args\":{\"token_id\":\"usdc.test.near\"}},\"held\":{\"contract\":\"usdc.test.near\",\"view\":\"ft_balance_of\",\"args\":{\"account_id\":\"ledger.test.near\"}},\"explain\":\"The total USDC owed to users must never exceed the USDC actually held by the ledger.\",\"status\":\"approved\",\"response\":\"pause\",\"origin\":{\"kind\":\"ai\",\"model\":\"Qwen/Qwen3.8-27B\",\"draftId\":\"drf_3bef7566fd03\"},\"approvedBy\":\"demo operator\",\"approvedAt\":\"2026-11-13T11:46:42.931Z\"},\"evaluation\":{\"owed\":\"290000000000\",\"held\":\"250000000000\",\"block\":177,\"owed_plain\":\"290,000 USDC\",\"held_plain\":\"250,000 USDC\",\"shortfall_plain\":\"40,000 USDC\"},\"confirmation\":{\"owed\":\"290000000000\",\"held\":\"250000000000\",\"block\":177},\"triggerBlock\":177,\"receipts_in_breaking_block\":[{\"receiptId\":\"GvMd5FePSCVudKZ6wP1CtfM67Ks5ba9uSEvFt9cJXWD\",\"predecessor\":\"ledger.test.near\",\"receiver\":\"usdc.test.near\"}],\"qorvex_action\":\"Qorvex paused the contract through the guardian at block 181.\"}"
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 600,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  },
+  "response": {
+    "id": "45dd9eda307345b0aac4d61aef873c9d",
+    "object": "chat.completion",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Solvency breach: USDC owed (290k) exceeds held (250k) by 40k USDC.\nCheck receipt GvMd5FePSCVudKZ6wP1CtfM67Ks5ba9uSEvFt9cJXWD from ledger to usdc.\nThis transfer likely represents an outflow that reduced the held balance.\nVerify if this was a valid withdrawal or an error causing the shortfall.\nNo refund or resolution receipt is listed to explain the discrepancy.\nThe cause is not evident from the single outgoing receipt provided.\nQorvex paused the contract through the guardian at block 181.\nPlease investigate the specific logic of that transfer for root cause."
+        },
+        "finish_reason": "stop",
+        "logprobs": null,
+        "matched_stop": 248046
+      }
+    ],
+    "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "created": 1794570430,
+    "usage": {
+      "prompt_tokens": 547,
+      "total_tokens": 707,
+      "completion_tokens": 160,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "reasoning_tokens": 0,
+      "completion_tokens_details": null
+    }
+  },
+  "text": "Solvency breach: USDC owed (290k) exceeds held (250k) by 40k USDC.\nCheck receipt GvMd5FePSCVudKZ6wP1CtfM67Ks5ba9uSEvFt9cJXWD from ledger to usdc.\nThis transfer likely represents an outflow that reduced the held balance.\nVerify if this was a valid withdrawal or an error causing the shortfall.\nNo refund or resolution receipt is listed to explain the discrepancy.\nThe cause is not evident from the single outgoing receipt provided.\nQorvex paused the contract through the guardian at block 181.\nPlease investigate the specific logic of that transfer for root cause.",
+  "chatId": "45dd9eda307345b0aac4d61aef873c9d",
+  "recordedAt": "2026-11-13T11:47:11.250Z",
+  "modelUsed": "Qwen/Qwen3.6-35B-A3B-FP8"
+}

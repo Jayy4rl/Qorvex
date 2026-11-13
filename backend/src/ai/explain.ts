@@ -4,11 +4,31 @@
  */
 import type { Breach } from "@qorvex/shared";
 import { FixtureMissingError, type NearAiClient } from "./client.ts";
+import { humanAmount } from "../near/tokens.ts";
 
-function explainMessages(b: Breach) {
+/** Token decimals and symbol, so the model gets amounts in plain units instead of guessing the scale. */
+export interface TokenUnits {
+  decimals: number;
+  symbol?: string;
+}
+
+function explainMessages(b: Breach, contract?: string, units?: TokenUnits) {
+  const plain = (raw: string) => (units ? `${humanAmount(raw, units.decimals)}${units.symbol ? ` ${units.symbol}` : ""}` : undefined);
+  const ev = b.evaluation;
   const facts = {
+    contract,
     rule: b.rule,
-    evaluation: b.evaluation.type === "solvency" ? { owed: b.evaluation.owed, held: b.evaluation.held, block: b.evaluation.blockHeight } : b.evaluation,
+    evaluation:
+      ev.type === "solvency"
+        ? {
+            owed: ev.owed,
+            held: ev.held,
+            block: ev.blockHeight,
+            ...(units
+              ? { owed_plain: plain(ev.owed), held_plain: plain(ev.held), shortfall_plain: BigInt(ev.owed) > BigInt(ev.held) ? plain((BigInt(ev.owed) - BigInt(ev.held)).toString()) : plain("0") }
+              : {}),
+          }
+        : ev,
     confirmation: b.confirmation && b.confirmation.type === "solvency" ? { owed: b.confirmation.owed, held: b.confirmation.held, block: b.confirmation.blockHeight } : undefined,
     triggerBlock: b.triggerBlock,
     receipts_in_breaking_block: b.triggerReceipts,
@@ -23,7 +43,7 @@ function explainMessages(b: Breach) {
     {
       role: "system" as const,
       content:
-        "You explain security incidents on NEAR smart contracts to the protocol's on-call engineer. The contract is already paused (or the rule is alert-only); you do not decide anything. Plain text, at most 8 short lines: what broke, by how much (give the difference), which accounts and receipts/transactions to check first, and the most likely cause based only on the receipts listed (e.g. a deposit that was refunded but stayed credited shows as an ft_on_transfer/resolve followed by ft_resolve_transfer). Describe Qorvex's action exactly as given in qorvex_action. If the data does not show the cause, say so instead of guessing.",
+        "You explain security incidents on NEAR smart contracts to the protocol's on-call engineer. The contract is already paused (or the rule is alert-only); you do not decide anything. Plain text, at most 8 short lines: what broke, by how much (give the difference, using the *_plain amounts when present), which accounts and receipts/transactions to check first, and the most likely cause based only on the receipts listed (e.g. a deposit that was refunded but stayed credited shows as an ft_on_transfer/resolve followed by ft_resolve_transfer). Describe Qorvex's action exactly as given in qorvex_action. If the data does not show the cause, say so instead of guessing.",
     },
     { role: "user" as const, content: JSON.stringify(facts) },
   ];
@@ -72,7 +92,7 @@ function proposalExplainMessages(b: Breach) {
   ];
 }
 
-export async function explainBreach(ai: NearAiClient, b: Breach): Promise<Breach["explanation"] | undefined> {
+export async function explainBreach(ai: NearAiClient, b: Breach, contract?: string, units?: TokenUnits): Promise<Breach["explanation"] | undefined> {
   let request: { messages: ReturnType<typeof explainMessages>; replayKey: object; maxTokens: number };
   if (b.evaluation.type === "proposal") {
     if (b.vote?.status === "sending") return undefined;
@@ -80,7 +100,9 @@ export async function explainBreach(ai: NearAiClient, b: Breach): Promise<Breach
     request = { messages: proposalExplainMessages(b), replayKey: { job: "explain-proposal", ruleId: b.ruleId, proposalId: b.evaluation.proposalId, summary: b.evaluation.summary }, maxTokens: 500 };
   } else {
     if (b.response === "pause" && b.pause?.status !== "landed" && b.pause?.status !== "skipped") return undefined;
-    request = { messages: explainMessages(b), replayKey: { job: "explain-breach", ruleId: b.ruleId, ruleType: b.rule.type }, maxTokens: 600 };
+    // The contract is part of the key: two contracts with the same rule id get their own explanation.
+    request = { messages: explainMessages(b, contract), replayKey: { job: "explain-breach", contract: contract ?? null, ruleId: b.ruleId, ruleType: b.rule.type }, maxTokens: 600 };
+    request.messages = explainMessages(b, contract, units);
   }
   try {
     const r = await ai.chat(ai.cfg.explainModel, request.messages, request.replayKey, { maxTokens: request.maxTokens });
