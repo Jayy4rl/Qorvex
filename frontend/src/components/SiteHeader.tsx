@@ -58,7 +58,7 @@ export function SiteHeader() {
           <NavLink to={account.to} className="btn btn-secondary btn-sm">
             {account.label}
           </NavLink>
-          <Link to="/docs/getting-started" className="btn btn-primary btn-sm">
+          <Link to="/check" className="btn btn-primary btn-sm">
             Get started
           </Link>
         </div>
@@ -85,7 +85,7 @@ export function SiteHeader() {
             <Link to={account.to} className="btn btn-secondary">
               {account.label}
             </Link>
-            <Link to="/docs/getting-started" className="btn btn-primary">
+            <Link to="/check" className="btn btn-primary">
               Get started
             </Link>
           </div>

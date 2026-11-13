@@ -45,7 +45,7 @@ const MINIMAL_BALANCE: Partial<Record<AccountName, number>> = { guardian: 2.3, w
 /** Every account the full demo world creates, with its testnet balance and what it is. */
 const fullPlan: Record<AccountName, { balance: number; sub: string; what: string; parent?: AccountName }> = {
   guardian: { balance: 2.5, sub: "guardian", what: "guardian contract (210 KB wasm)" },
-  watcher: { balance: 0.6, sub: "watcher", what: "holds the pause-only key (0.5 NEAR allowance)" },
+  watcher: { balance: 0.6, sub: "watcher", what: "holds the pause-only key (allowance 0.5 NEAR full, 0.2 NEAR minimal)" },
   firewall: { balance: 0.6, sub: "firewall", what: "holds the reject-only DAO key (0.5 NEAR allowance)" },
   owner: { balance: 0.5, sub: "owner", what: "ledger owner, treasury council member" },
   treasury: { balance: 5.0, sub: "treasury", what: "Sputnik DAO v2.3.1 (444 KB), owns the vault" },

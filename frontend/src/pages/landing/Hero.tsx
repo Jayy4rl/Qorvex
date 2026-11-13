@@ -42,7 +42,7 @@ export function Hero() {
             Spending limits and circuit breakers for NEAR contracts, treasuries and relayers.
           </p>
           <div className="hero-ctas hero-fade" style={{ animationDelay: "220ms" }}>
-            <Link to="/docs/getting-started" className="btn btn-primary btn-lg">
+            <Link to="/check" className="btn btn-primary btn-lg">
               Get started <IconArrow size={16} />
             </Link>
             <Link to="/docs" className="btn btn-secondary btn-lg">

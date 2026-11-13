@@ -78,7 +78,9 @@ describe("internal links", () => {
   it("header CTAs lead to real flows", () => {
     const html = pages.get("/")!;
     expect(html).toMatch(/href="\/sign-in"[^>]*>Sign in/);
-    expect(html).toMatch(/href="\/docs\/getting-started"[^>]*>Get started/);
+    // Every "Get started" goes to the contract check, which needs no account.
+    expect(html).toMatch(/href="\/check"[^>]*>Get started/);
+    expect(html).not.toMatch(/href="\/docs\/getting-started"[^>]*>Get started/);
     expect(html).toMatch(/href="\/docs"[^>]*>Explore documentation/);
   });
 });

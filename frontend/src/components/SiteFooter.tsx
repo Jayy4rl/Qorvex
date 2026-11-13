@@ -53,7 +53,7 @@ export function SiteFooter() {
                 <Link to="/sign-in">Sign in</Link>
               </li>
               <li>
-                <Link to="/docs/getting-started">Get started</Link>
+                <Link to="/check">Get started</Link>
               </li>
             </ul>
           </nav>
