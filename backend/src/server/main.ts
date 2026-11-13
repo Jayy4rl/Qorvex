@@ -119,7 +119,10 @@ export async function startQorvex(o: StartOptions): Promise<Qorvex> {
       rt.watcher.run().catch((e) => log(`[${rt.id}] watcher stopped: ${(e as Error).message}`));
     }
   }
-  log(`Qorvex listening on ${publicUrl} (networks: ${o.networks.join(", ")}; AI mode: ${ai.cfg.mode}; alerts: ${alerter.configured.join(", ") || "none configured"})`);
+  log(`Qorvex listening on port ${o.port}, all interfaces; public URL ${publicUrl} (networks: ${o.networks.join(", ")}; AI mode: ${ai.cfg.mode}; alerts: ${alerter.configured.join(", ") || "none configured"})`);
+  if (process.env.RAILWAY_ENVIRONMENT && /localhost|127\.0\.0\.1/.test(publicUrl)) {
+    log("WARNING: running on Railway without a public domain. Generate one (Settings → Networking) or set PUBLIC_URL: sign-in only works from the public URL.");
+  }
   return {
     store,
     auth,
