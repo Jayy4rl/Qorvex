@@ -220,6 +220,5 @@ The hosted app is one Railway service built from the [`Dockerfile`](Dockerfile),
 - Built at NEAR HACKATHON, November 2026. Tracks: `security`, `defi`, `social`.
 - All code was written during the hackathon window; the first commit is dated 2026-11-10. NEAR only, no other chains.
 - Libraries are listed above, with exact versions in each `package.json` and `Cargo.toml`. The code was written with Claude Code, an AI coding assistant.
-- Other hackathon project by the same team: **[OTHER PROJECT NAME] — [OTHER PROJECT URL]**
 
 MIT licensed, see [LICENSE](LICENSE).
